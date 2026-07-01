@@ -14,7 +14,8 @@ name: Release
 #     CLOUDREPO_PASSWORD    - CloudRepo upload password/token (≈ the SECRET_KEY)
 #   Variables:
 #     CLOUDREPO_PUBLISH_URL - upload endpoint, mirroring the SDK / umbrella:
-#                             https://pypi.3lc.ai/public/repositories/prereleases-public/
+#                             https://pypi.3lc.ai/repositories/prereleases-public
+#                             (NO "/public/": that path is the anonymous READ-only mount; uv publish POSTs are rejected.)
 #                             (confirm the exact UPLOAD url with whoever owns the CloudRepo —
 #                              the read mount and the upload endpoint can differ.)
 # Optionally add required reviewers on the "release" environment to gate publishes.
