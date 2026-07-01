@@ -1,4 +1,4 @@
-# 3lc-plugin-yolo
+# 3lc-compute-plugin-yolo
 
 The **YOLO training** plugin for the [3LC compute service](https://github.com/3lc-ai) — fine-tune
 YOLO models on your data with live metrics, SocketIO progress, and experiment tracking.
@@ -12,10 +12,10 @@ The host never installs this distribution into its own venv. It is delivered thr
 three plugin Sources, all converging on the same out-of-process worker in a managed venv:
 
 - **Folder Source (dev):** point the service at this repo's `src/`
-  (`--plugin-dir ../3lc-plugin-yolo/src` or `TLC_COMPUTE_EXTERNAL_PLUGIN_DIRS`). Provisioning runs
+  (`--plugin-dir ../3lc-compute-plugin-yolo/src` or `TLC_COMPUTE_EXTERNAL_PLUGIN_DIRS`). Provisioning runs
   `uv sync --extra yolo` against this repo.
-- **Index:** `3lc-plugin-yolo[yolo]==<ver>`.
-- **GitHub:** `github:3lc-ai/3lc-plugin-yolo@v<ver>`.
+- **Index:** `3lc-compute-plugin-yolo[yolo]==<ver>`.
+- **GitHub:** `github:3lc-ai/3lc-compute-plugin-yolo@v<ver>`.
 
 The heavy stack (`torch`, `3lc-ultralytics`) lives behind the **`[yolo]` extra** named by
 `runtime.provision_extra` in `src/tlc_plugin_yolo/plugin.toml` and is installed **only** into the

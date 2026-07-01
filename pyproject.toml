@@ -1,4 +1,4 @@
-# 3lc-plugin-yolo — the YOLO training plugin for the 3LC compute service, as a standalone
+# 3lc-compute-plugin-yolo — the YOLO training plugin for the 3LC compute service, as a standalone
 # single-plugin distribution with its own heavy GPU stack version cadence.
 #
 # Isolation contract: this distribution is NEVER installed into the host venv. The host discovers
@@ -11,8 +11,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "3lc-plugin-yolo"
-version = "1.0.0"
+name = "3lc-compute-plugin-yolo"
+version = "0.1.0"
 description = "YOLO training plugin for the 3LC compute service (venv-isolated)."
 requires-python = ">=3.10"
 # AGPL-3.0: this plugin links 3lc-ultralytics (Ultralytics YOLO, AGPL-3.0), so a distributed
@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 # The plugin's heavy stack — installed ONLY into the provisioned venv (uv sync --extra yolo, or
-# 3lc-plugin-yolo[yolo]==<ver> from an index). NOTE: 3lc-ultralytics is AGPL-3.0 — the reason this
+# 3lc-compute-plugin-yolo[yolo]==<ver> from an index). NOTE: 3lc-ultralytics is AGPL-3.0 — the reason this
 # plugin's LICENSE is AGPL-3.0.
 [project.optional-dependencies]
 yolo = [
