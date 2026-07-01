@@ -1,0 +1,83 @@
+# 3lc-plugin-yolo — the YOLO training plugin for the 3LC compute service, as a standalone
+# single-plugin distribution with its own heavy GPU stack version cadence.
+#
+# Isolation contract: this distribution is NEVER installed into the host venv. The host discovers
+# the plugin via a folder Source pointed at `src/` (dev) or installs it into its OWN managed venv
+# (shop/index/git). The heavy stack (torch / 3lc-ultralytics) lives behind the `[yolo]` extra named
+# by the manifest's runtime.provision_extra and is installed ONLY into that provisioned venv —
+# never the host venv. Base `dependencies` is the SDK floor only.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "3lc-plugin-yolo"
+version = "1.0.0"
+description = "YOLO training plugin for the 3LC compute service (venv-isolated)."
+requires-python = ">=3.10"
+# AGPL-3.0: this plugin links 3lc-ultralytics (Ultralytics YOLO, AGPL-3.0), so a distributed
+# work must itself be AGPL-3.0. Full text in ./LICENSE.
+license = "AGPL-3.0-only"
+# Base = the SDK floor ONLY. The heavy stack rides the [yolo] extra below and is installed only
+# into the plugin's provisioned venv. [shared] = the SDK's optional `tlc` data plane.
+dependencies = [
+    "3lc-plugin-sdk[shared]>=0.1.0,<0.2.0",
+]
+
+# The plugin's heavy stack — installed ONLY into the provisioned venv (uv sync --extra yolo, or
+# 3lc-plugin-yolo[yolo]==<ver> from an index). NOTE: 3lc-ultralytics is AGPL-3.0 — the reason this
+# plugin's LICENSE is AGPL-3.0.
+[project.optional-dependencies]
+yolo = [
+    "3lc-ultralytics>=0.3.3",
+    "torch",
+    "torchvision",
+]
+
+# Advertised for the optional installed-package / index-install discovery path. Value = the import
+# package; its bundled plugin.toml drives id/ui/runtime (and the provision extra).
+[project.entry-points."tlc_compute.plugins"]
+yolo = "tlc_plugin_yolo"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tlc_plugin_yolo"]
+
+# torch/torchvision from the CUDA 12.6 index on Linux — used only when the [yolo] extra is selected
+# during venv provisioning (not on a bare install).
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+# 3lc releases index — 3lc versions not yet on public PyPI.
+[[tool.uv.index]]
+name = "3lc-releases"
+url = "https://pypi.3lc.ai/public/repositories/releases-public"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126", marker = "sys_platform == 'linux'" }
+torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux'" }
+# 3lc resolves from the releases index; 3lc-plugin-sdk resolves from its GitHub repo. For
+# side-by-side local dev, override these UNCOMMITTED, e.g.
+#   3lc-plugin-sdk = { path = "../3lc-plugin-sdk", editable = true }
+3lc = { index = "3lc-releases" }
+3lc-plugin-sdk = { git = "https://github.com/3lc-ai/3lc-plugin-sdk.git", branch = "develop" }
+
+# Ruff config mirrors 3lc-plugin-sdk for a consistent house style. CI runs ruff standalone (uvx) —
+# linting must not require resolving the heavy ML stack.
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+exclude = [".git", ".mypy_cache", ".ruff_cache", ".venv", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["A", "C4", "E", "EM", "F", "I", "N", "PIE", "RUF", "SIM", "UP", "W"]
+ignore = ["N806", "N818", "SIM105", "SIM108", "RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+preview = true
+docstring-code-format = true
