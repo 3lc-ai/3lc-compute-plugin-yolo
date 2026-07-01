@@ -32,6 +32,11 @@ yolo = [
     "3lc-ultralytics>=0.3.3",
     "torch",
     "torchvision",
+    # Dimensionality reduction: the plugin materializes pacmap/umap-reduced tables in its OWN
+    # provisioned venv, so it needs tlc's PacmapTable/UmapTable (pacmap / umap-learn / joblib /
+    # scikit-learn). `[shared]` only brings `3lc[pandas]`; unioned here that yields
+    # `3lc[pandas,pacmap,umap]` in the venv. Mirrors the host's spec in 3lc-compute.
+    "3lc[pacmap,umap]>=3.0.0,<4.0.0",
 ]
 
 # Advertised for the optional installed-package / index-install discovery path. Value = the import
