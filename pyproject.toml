@@ -21,7 +21,7 @@ license = "AGPL-3.0-only"
 # Base = the SDK floor ONLY. The heavy stack rides the [yolo] extra below and is installed only
 # into the plugin's provisioned venv. [shared] = the SDK's optional `tlc` data plane.
 dependencies = [
-    "3lc-plugin-sdk[shared]>=0.1.0,<0.2.0",
+    "3lc-compute-plugin-sdk[shared]>=0.1.0,<0.2.0",
 ]
 
 # The plugin's heavy stack — installed ONLY into the provisioned venv (uv sync --extra yolo, or
@@ -63,13 +63,13 @@ explicit = true
 [tool.uv.sources]
 torch = { index = "pytorch-cu126", marker = "sys_platform == 'linux'" }
 torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux'" }
-# 3lc resolves from the releases index; 3lc-plugin-sdk resolves from its GitHub repo. For
+# 3lc resolves from the releases index; 3lc-compute-plugin-sdk resolves from its GitHub repo. For
 # side-by-side local dev, override these UNCOMMITTED, e.g.
 #   3lc-plugin-sdk = { path = "../3lc-plugin-sdk", editable = true }
 3lc = { index = "3lc-releases" }
-3lc-plugin-sdk = { git = "https://github.com/3lc-ai/3lc-plugin-sdk.git", branch = "main" }
+3lc-compute-plugin-sdk = { git = "https://github.com/3lc-ai/3lc-compute-plugin-sdk.git", branch = "main" }
 
-# Ruff config mirrors 3lc-plugin-sdk for a consistent house style. CI runs ruff standalone (uvx) —
+# Ruff config mirrors 3lc-compute-plugin-sdk for a consistent house style. CI runs ruff standalone (uvx) —
 # linting must not require resolving the heavy ML stack.
 [tool.ruff]
 line-length = 120
