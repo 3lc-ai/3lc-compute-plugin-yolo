@@ -47,8 +47,10 @@ yolo = "tlc_plugin_yolo"
 [tool.hatch.build.targets.wheel]
 packages = ["src/tlc_plugin_yolo"]
 
-# torch/torchvision from the CUDA 12.6 index on Linux — used only when the [yolo] extra is selected
-# during venv provisioning (not on a bare install).
+# torch/torchvision from the CUDA 12.6 index on Linux AND Windows — used only when the [yolo] extra
+# is selected during venv provisioning (not on a bare install). Windows needs the explicit index
+# because default-PyPI torch on Windows is CPU-only (unlike Linux, where PyPI already ships CUDA
+# wheels). macOS falls through to PyPI (no CUDA there).
 [[tool.uv.index]]
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
@@ -66,8 +68,8 @@ url = "https://pypi.3lc.ai/public/repositories/prereleases-public"
 explicit = true
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu126", marker = "sys_platform == 'linux'" }
-torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux'" }
+torch = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
+torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
 # 3lc resolves from the releases index; 3lc-compute-plugin-sdk resolves from the prereleases index. For
 # side-by-side local dev, override these UNCOMMITTED, e.g.
 #   3lc-plugin-sdk = { path = "../3lc-plugin-sdk", editable = true }
