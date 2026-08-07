@@ -12,7 +12,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "3lc-compute-plugin-yolo"
-version = "0.1.3"
+version = "0.1.4"
 description = "YOLO training plugin for the 3LC compute service (venv-isolated)."
 requires-python = ">=3.10"
 # AGPL-3.0: this plugin links 3lc-ultralytics (Ultralytics YOLO, AGPL-3.0), so a distributed
@@ -29,7 +29,7 @@ dependencies = [
 # plugin's LICENSE is AGPL-3.0.
 [project.optional-dependencies]
 yolo = [
-    "3lc-ultralytics>=0.3.3",
+    "3lc-ultralytics>=0.4.0",
     "torch",
     "torchvision",
     # Dimensionality reduction: the plugin materializes pacmap/umap-reduced tables in its OWN
