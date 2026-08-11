@@ -21,7 +21,7 @@ license = "AGPL-3.0-only"
 # Base = the SDK floor ONLY. The heavy stack rides the [yolo] extra below and is installed only
 # into the plugin's provisioned venv. [shared] = the SDK's optional `tlc` data plane.
 dependencies = [
-    "3lc-compute-plugin-sdk[shared]>=0.1.0,<0.2.0",
+    "3lc-compute-plugin-sdk[shared]>=0.2.0,<0.3.0",
 ]
 
 # The plugin's heavy stack — installed ONLY into the provisioned venv (uv sync --extra yolo, or
