@@ -1,10 +1,20 @@
 # 3lc-compute-plugin-yolo
 
-The **YOLO training** plugin for the [3LC compute service](https://github.com/3lc-ai) — fine-tune
-YOLO models on your data with live metrics, SocketIO progress, and experiment tracking.
+The **Ultralytics YOLO training** plugin for the [3LC compute service](https://github.com/3lc-ai) —
+fine-tune [Ultralytics YOLO](https://github.com/ultralytics/ultralytics) models on your data with
+live metrics, SocketIO progress, and experiment tracking.
+
+## Licensing
 
 A standalone, venv-isolated plugin distribution, licensed **AGPL-3.0-only**: this plugin links
 `3lc-ultralytics` (Ultralytics YOLO, AGPL-3.0), so the distributed work must itself be AGPL-3.0.
+
+Ultralytics YOLO is dual-licensed: free under
+[AGPL-3.0](https://github.com/ultralytics/ultralytics/blob/main/LICENSE) for use that complies with
+its open-source terms, while commercial use beyond those terms requires a paid
+[Ultralytics Enterprise License](https://www.ultralytics.com/license). It is the user's
+responsibility to ensure their use of Ultralytics YOLO through this plugin is appropriately
+licensed. The plugin's UI displays this notice prominently.
 
 ## How it's consumed
 

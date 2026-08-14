@@ -34,9 +34,33 @@
 
 /* Queue job info */
 .tr-job-info { font-size: 9px; color: var(--text-muted); }
+
+/* License notice — always visible at the top of the fragment */
+.yolo-license-note {
+  display: flex; align-items: flex-start; gap: 9px;
+  margin-bottom: 12px; padding: 9px 14px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 8px);
+  font-size: 11px; color: var(--text-muted); line-height: 1.55;
+}
+.yolo-license-note svg { flex-shrink: 0; margin-top: 1px; opacity: 0.7; }
+.yolo-license-note a { color: var(--accent); }
 </style>
 
 <div class="plugin-page">
+<!-- ── License notice ─────────────────────────────────────── -->
+<div class="yolo-license-note">
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v11"/><path d="M3 5h10"/><path d="M5 5l-2.2 4.5a2.4 2.4 0 0 0 4.4 0L5 5z"/><path d="M11 5l-2.2 4.5a2.4 2.4 0 0 0 4.4 0L11 5z"/><path d="M6 14h4"/></svg>
+  <span>
+    This plugin uses <a href="https://github.com/ultralytics/ultralytics" target="_blank" rel="noopener">Ultralytics YOLO</a>, which is dual-licensed:
+    free under <a href="https://github.com/ultralytics/ultralytics/blob/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a> for use that complies
+    with its open-source terms, while commercial use beyond those terms requires a paid
+    <a href="https://www.ultralytics.com/license" target="_blank" rel="noopener">Ultralytics Enterprise License</a>.
+    It is your responsibility to ensure your use is appropriately licensed. This plugin is itself open source under
+    <a href="https://github.com/3lc-ai/3lc-compute-plugin-yolo" target="_blank" rel="noopener">AGPL-3.0</a>.
+  </span>
+</div>
+
 <!-- ── Hero ───────────────────────────────────────────────── -->
 <div class="plugin-hero" style="padding:20px 24px">
       <h2 style="margin-bottom:6px">Ultralytics YOLO Training</h2>
