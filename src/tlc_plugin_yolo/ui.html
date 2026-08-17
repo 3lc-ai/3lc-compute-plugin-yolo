@@ -1165,7 +1165,13 @@ function trStartTraining() {
       trLoadProjects();
 
       // Start training (host-managed via the unified run_job contract)
-      _trPost("/api/plugins/yolo/run", { project_id: resp.id })
+      // project_name attributes the job in the generic Queue & Progress panel —
+      // the host reads it from the run body only; the value in the saved config
+      // never reaches the job record. (project_id is the yolo CONFIG id.)
+      _trPost("/api/plugins/yolo/run", {
+        project_id: resp.id,
+        project_name: (document.getElementById("tr-3lc-project").value || "").trim(),
+      })
         .then(function(trainResp) {
           if (trainResp.error) {
             trLog("Error: " + trainResp.error);
