@@ -51,11 +51,12 @@ class YoloPlugin(ComputePlugin):
         """Return the self-contained YOLO UI HTML+JS+CSS fragment."""
         if self._ui_cache is None:
             from tlc_plugin_sdk.shared.alias_override_ui import alias_override_ui_script
+            from tlc_plugin_sdk.shared.data_source_ui import data_source_ui_script
             from tlc_plugin_sdk.shared.ui_inject import inject_scripts
 
             ui_path = Path(__file__).resolve().parent / "ui.html"
             raw = ui_path.read_text(encoding="utf-8")
-            self._ui_cache = inject_scripts(raw, alias_override_ui_script())
+            self._ui_cache = inject_scripts(raw, data_source_ui_script(), alias_override_ui_script())
         return self._ui_cache
 
     def compute(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -319,5 +320,11 @@ class YoloPlugin(ComputePlugin):
                 restore_aliases(alias_originals)
 
     def get_route_handlers(self) -> list[Any]:
-        """Serve YOLO's custom routes as relative Litestar handlers (host + venv)."""
-        return _routes.get_route_handlers()
+        """Serve YOLO's custom routes as relative Litestar handlers (host + venv).
+
+        The SDK's shared data-source routes (``/browse``) back the pretrained-checkpoint
+        picker in the fragment.
+        """
+        from tlc_plugin_sdk.shared.data_source_routes import data_source_route_handlers
+
+        return [*_routes.get_route_handlers(), *data_source_route_handlers()]

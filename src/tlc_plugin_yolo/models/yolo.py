@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import tlc
+from tlc_plugin_sdk.shared.url_utils import normalize_url
 from tlc_ultralytics import YOLO
 from tlc_ultralytics.settings import Settings
 
@@ -418,8 +419,10 @@ class YOLOModel(BaseTrainingModel):
         settings = Settings(**settings_kwargs)
         on_status(f"3LC Settings: {settings_kwargs}")
 
-        # Use pretrained model URL if provided (fine-tuning from existing checkpoint)
-        pretrained_url = params.get("pretrained_model_url", "").strip()
+        # Use pretrained model URL if provided (fine-tuning from existing checkpoint).
+        # normalize_url expands a user-typed ``~`` (protocol URLs and alias tokens pass
+        # through untouched); without it a tilde path reaches YOLO() literally.
+        pretrained_url = normalize_url(params.get("pretrained_model_url", "").strip())
         source_model_name = model_name  # Remember the base model for metadata
         if pretrained_url:
             on_status(f"Loading pretrained model from: {pretrained_url}")
