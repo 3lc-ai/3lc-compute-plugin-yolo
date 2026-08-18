@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+- Training jobs are attributed to the configured 3LC project in the generic Queue &
+  Progress panel: the run request now carries `project_name`, which the host reads from
+  the request body only — the value stored in the saved config never reached the job
+  record, so jobs were hidden from every project-filtered view.
 
 ## [0.1.3] - 2026-07-03
 
