@@ -200,10 +200,9 @@
         <!-- Pretrained Model URL (fine-tune from existing checkpoint) -->
         <div class="form-group" style="margin-top:8px">
           <label class="form-label" for="tr-pretrained-url">Pretrained Model URL <span class="text-muted">(optional — fine-tune from existing checkpoint)</span></label>
-          <div style="display:flex;gap:6px">
-            <input type="text" id="tr-pretrained-url" class="form-control plugin-mono"
-                   placeholder="Path to .pt checkpoint (leave empty for default pretrained)">
-          </div>
+          <!-- SDK data-source widget (rendered at init): text input keeps id tr-pretrained-url,
+               plus a Browse… panel backed by the SDK's /browse route. -->
+          <div id="tr-pretrained-ds"></div>
         </div>
 
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
@@ -1468,6 +1467,19 @@ function trSwapUrls() {
   val.value = tmp;
   trOnTrainTableChange();
 }
+
+// ── Data Source Init ──────────────────────────────────────────
+// The SDK's shared data-source picker for the pretrained checkpoint: the rendered
+// text input keeps the id "tr-pretrained-url", so config save/restore reads and
+// writes it exactly as before.
+(function() {
+  document.getElementById("tr-pretrained-ds").innerHTML = _tlcDataSourceHtml("tr-pretrained-url", {
+    placeholder: "Path to .pt checkpoint (leave empty for default pretrained)",
+    accept: "*.pt,*.pth",
+    mode: "file",
+  });
+  _tlcBindDataSource("tr-pretrained-url", COMPUTE_URL, "yolo", { accept: "*.pt,*.pth", mode: "file" });
+})();
 
 // ── Alias Override Init ───────────────────────────────────────
 (function() {
