@@ -7,35 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- Training jobs are attributed to the configured 3LC project in the generic Queue &
-  Progress panel: the run request now carries `project_name`, which the host reads from
-  the request body only — the value stored in the saved config never reached the job
-  record, so jobs were hidden from every project-filtered view.
+Nothing yet.
 
-## [0.2.0] - 2026-08-18
+## [0.2.0] - 2026-08-19
 
 Also covers the unreleased 0.1.5 bump (#4), which was never tagged.
 
 ### Added
 - The pretrained-checkpoint field uses the SDK's shared data-source picker: browse the compute
   node's filesystem (confined to operator-configured roots) instead of typing a path blind.
-  The SDK's `/browse` route is mounted alongside the plugin's own routes (#6).
+  The SDK's `/browse` route is mounted alongside the plugin's own routes (#7).
 
 ### Changed
 - **Distribution moved to PyPI**: tagged releases publish `3lc-compute-plugin-yolo` to public
   PyPI via Trusted Publishing; the CloudRepo index (pypi.3lc.ai) is no longer needed to install
-  the plugin. Manual prerelease builds keep publishing to CloudRepo for a grace period (#6).
+  the plugin. Manual prerelease builds keep publishing to CloudRepo for a grace period (#7).
 - The plugin SDK pin is `>=0.2.2,<0.3.0`, resolved from public PyPI (the SDK's home since
-  0.2.2) — no custom indexes remain besides the CUDA torch index (#6). Earlier steps on the
+  0.2.2) — no custom indexes remain besides the CUDA torch index (#7). Earlier steps on the
   way: the pin was widened to `>=0.2.0,<0.3.0` (#3), and `3lc` moved to public PyPI with the
   3.2 rust release (#5).
 - The plugin presents itself as "Ultralytics YOLO" and surfaces the Ultralytics dual-license
   terms (AGPL-3.0 / Enterprise License) in the manifest and README (#4).
 
 ### Fixed
+- Training jobs are attributed to the configured 3LC project in the generic Queue &
+  Progress panel: the run request now carries `project_name`, which the host reads from
+  the request body only — the value stored in the saved config never reached the job
+  record, so jobs were hidden from every project-filtered view (#6).
 - A `~`-prefixed pretrained-checkpoint path is expanded at ingress instead of reaching the
-  model loader literally and failing mid-job with an opaque file-not-found (#6).
+  model loader literally and failing mid-job with an opaque file-not-found (#7).
 
 ## [0.1.4] - 2026-08-07
 
