@@ -13,7 +13,7 @@ build-backend = "hatchling.build"
 [project]
 name = "3lc-compute-plugin-yolo"
 version = "0.2.0"
-description = "Ultralytics YOLO training plugin for the 3LC compute service (venv-isolated)."
+description = "Ultralytics YOLO training plugin for the 3LC compute service."
 requires-python = ">=3.10"
 # AGPL-3.0: this plugin links 3lc-ultralytics (Ultralytics YOLO, AGPL-3.0), so a distributed
 # work must itself be AGPL-3.0. Full text in ./LICENSE.
