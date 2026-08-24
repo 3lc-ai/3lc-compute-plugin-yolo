@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+- The Instance Embeddings Reducer default is UMAP (was PaCMAP), matching the Image Embeddings
+  Reducer default, and UMAP is now listed first in the dropdown. PaCMAP and PCA remain
+  selectable; no behavior change for users who already select a reducer explicitly (#11).
 
 ## [0.2.1] - 2026-08-21
 
