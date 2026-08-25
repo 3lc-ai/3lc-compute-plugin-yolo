@@ -3,11 +3,12 @@
 """YOLO plugin — sidebar plugin for YOLO fine-tuning with SocketIO real-time progress.
 
 Job execution uses the unified ``run_job(ctx)`` contract: the host JobManager owns
-the queue / cancel / generic progress, while this plugin re-emits its own ``/yolo``
-SocketIO events (``job_status`` / ``epoch_progress`` / ``job_completed`` /
-``job_failed``) via ``ctx.emit`` for its embedded UI. ``ctx.params`` carries the
-``project_id``; the ProjectStore resolves it to the frozen training config, exactly
-as the old runner did.
+the queue / cancel / generic progress, and the job's outcome rides the generic
+channel too — ``ctx.result(run_url)`` for the run link, a raised exception (or
+``ctx.fail``) for failure. On top of that this plugin re-emits its own ``/yolo``
+SocketIO events (``job_status`` / ``epoch_progress``) via ``ctx.emit`` for its
+embedded UI. ``ctx.params`` carries the ``project_id``; the ProjectStore resolves
+it to the frozen training config, exactly as the old runner did.
 """
 
 from __future__ import annotations
@@ -76,16 +77,18 @@ class YoloPlugin(ComputePlugin):
 
         Driven entirely by ``ctx``: ``ctx.progress`` / ``ctx.log`` feed the generic
         Queue & Progress panel (percent + label only — no training-specific fields),
-        while ``ctx.emit`` re-broadcasts the plugin's own ``/yolo`` events
-        (``job_status`` / ``epoch_progress`` / ``job_completed`` / ``job_failed``)
-        for the embedded UI. Cancellation is cooperative via ``ctx.cancelled``.
+        ``ctx.result`` publishes the 3LC run URL as soon as it is known (the Queue's
+        Open link), and failure is reported by raising — the worker turns it into the
+        generic terminal error. ``ctx.emit`` re-broadcasts the plugin's own ``/yolo``
+        events (``job_status`` / ``epoch_progress``) for the embedded UI. Cancellation
+        is cooperative via ``ctx.cancelled``.
 
         Args:
             ctx: Host-provided job context. ``ctx.params`` carries ``project_id``.
 
         Raises:
-            ValueError: If ``project_id`` is missing/unknown or the model is not in
-                the registry.
+            JobFailed: If ``project_id`` is missing/unknown or the model is not in
+                the registry (via ``ctx.fail`` — a clean user-facing message).
 
         """
         import time
@@ -104,19 +107,18 @@ class YoloPlugin(ComputePlugin):
         if project_id and store:
             project = store.get_project(project_id)
         if project is None:
-            msg = "Project not found" if project_id else "project_id is required"
-            ctx.emit("job_failed", {"job_id": ctx.job_id, "error": msg})
-            raise ValueError(msg)
+            ctx.fail("Project not found" if project_id else "project_id is required")
 
         # Look up the model in the registry (populated by discover_models()).
         model = MODEL_REGISTRY.get(project.model_name)
         if model is None:
-            msg = f"Model '{project.model_name}' not found in registry"
-            ctx.emit("job_failed", {"job_id": ctx.job_id, "error": msg})
-            raise ValueError(msg)
+            ctx.fail(f"Model '{project.model_name}' not found in registry")
 
         mode = project.mode or "train"
         mode_label = "Collection" if mode == "collect" else "Training"
+        # Custom payloads carry job_id explicitly: the context stamps it on the wire
+        # envelope, but the host relays only the payload to the /yolo namespace, and
+        # the fragment keys its handlers on data.job_id.
         ctx.emit("job_status", {"job_id": ctx.job_id, "status": "running", "message": f"{mode_label} started"})
 
         # Resolve .latest() if requested.
@@ -177,7 +179,7 @@ class YoloPlugin(ComputePlugin):
 
         # ── Model callbacks wired to ctx ──
         # Captures the run URL parsed from on_status messages (the runner did this on
-        # the job object) so it survives into the completion / cancellation events.
+        # the job object) so it survives into the completion / cancellation paths.
         _run_state: dict[str, Any] = {"run_url": None, "tlc_run_name": project.run_name or ""}
 
         def _generic_timing(timing: dict[str, Any]) -> dict[str, Any]:
@@ -248,6 +250,9 @@ class YoloPlugin(ComputePlugin):
                 _run_state["run_url"] = run_path
                 if not _run_state["tlc_run_name"]:
                     _run_state["tlc_run_name"] = run_path.rstrip("/").split("/")[-1]
+                # Publish the run link the moment the run exists, so the Queue's Open
+                # link (and delete-after-stop) work mid-training, not just at the end.
+                ctx.result(run_path)
             elif message.startswith("Run name: "):
                 _run_state["tlc_run_name"] = message[len("Run name: ") :]
             ctx.emit("job_status", {"job_id": ctx.job_id, "status": "running", "message": message})
@@ -294,25 +299,17 @@ class YoloPlugin(ComputePlugin):
                     logger.warning("No tlc_run object available to set cancelled status")
                 ctx.emit("job_status", {"job_id": ctx.job_id, "status": "cancelled", "message": "Job stopped by user"})
             else:
-                # Generic surface stays percent + label only — final training metrics
-                # ride the plugin-specific job_completed event, never ctx.metric.
+                # Generic surface stays percent + label only — the per-epoch metrics
+                # ride the plugin-specific epoch_progress event, never ctx.metric.
                 ctx.progress(percent=100.0, label="Done")
-                ctx.emit(
-                    "job_completed",
-                    {
-                        "job_id": ctx.job_id,
-                        "run_url": run_url,
-                        "project_name": project.project_name,
-                        "final_metrics": result.get("final_metrics", {}),
-                    },
-                )
                 if store:
                     store.update_last_run(project.id)
 
-        except Exception as e:
-            logger.exception("yolo run_job failed")
-            ctx.emit("job_failed", {"job_id": ctx.job_id, "error": str(e)})
-            raise
+            # The run link is the job's result (the Queue's Open button). Usually
+            # already published from on_status; re-publish the final value in case
+            # the model reported a different / later URL (last write wins).
+            if run_url:
+                ctx.result(str(run_url))
         finally:
             if alias_originals:
                 from tlc_plugin_sdk.shared.aliases import restore_aliases
