@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The plugin page resumes a job that is already queued or running when it is opened (or
+  re-opened after navigating away): the current-job panel shows the job's status and progress
+  and keeps tracking it to completion, instead of an empty "No active job." panel while the
+  job continues in the Queue & Progress panel.
+
 ### Changed
+- The plugin SDK pin is `>=0.3.0,<0.4.0`. Job completion, failure and cancellation now ride
+  the host's generic job channel: the 3LC run URL is published as the job's result as soon as
+  the run is created (so the Queue's Open link appears mid-training), and a failed job shows
+  the host's error text both in the Queue and on the plugin page. The plugin's own
+  `job_completed` / `job_failed` events are gone; `epoch_progress` and `job_status` are
+  unchanged.
+- Missing or unknown configuration (`project_id`, model) fails the job with a clean,
+  user-facing message instead of a stack-trace-prefixed one.
 - The Instance Embeddings Reducer default is UMAP (was PaCMAP), matching the Image Embeddings
   Reducer default, and UMAP is now listed first in the dropdown. PaCMAP and PCA remain
   selectable; no behavior change for users who already select a reducer explicitly (#11).

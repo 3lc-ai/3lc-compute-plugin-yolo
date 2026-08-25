@@ -315,7 +315,6 @@
 // Communicates with Compute Service for all API + SocketIO
 
 // ── State ─────────────────────────────────────────────────────
-var socket = null;
 var currentProjectId = null;
 var modelsCache = null;       // [{name, display_name, supported_tasks}]
 var modelParamsCache = {};    // {modelName: [field, ...]}
@@ -348,32 +347,29 @@ function _trPost(path, body) {
 }
 
 // ── SocketIO Connection ──────────────────────────────────────
+// One socket on the plugin's namespace, owned by the SDK's PluginJobs client (the
+// host injects it into every fragment). The plugin's own custom events
+// (epoch_progress / job_status) and the generic job_update channel (completion,
+// failure, cancellation — see trTrackJob) share it, so it is connected from mount
+// and a job that fails right after submit cannot slip past a still-connecting socket.
+var _YOLO_NS = "/yolo";
+
 function trInitSocket() {
-  var io = PLUGIN_API.libs.io;
-  if (!io) {
+  if (typeof PluginJobs === "undefined" || !PLUGIN_API.libs.io) {
     trLog("SocketIO not available — real-time updates disabled.");
     return;
   }
 
-  socket = io(COMPUTE_URL + "/yolo", {
-    transports: ["websocket", "polling"],
-    reconnection: true,
-    reconnectionDelay: 2000,
-  });
-
-  socket.on("connect", function() {
+  PluginJobs.on(_YOLO_NS, "connect", function() {
     trLog("Connected to Compute Service");
   });
 
-  socket.on("disconnect", function() {
+  PluginJobs.on(_YOLO_NS, "disconnect", function() {
     trLog("Disconnected from Compute Service");
   });
 
-  socket.on("connect_error", function() {
-  });
-
   // Progress events
-  socket.on("epoch_progress", function(data) {
+  PluginJobs.on(_YOLO_NS, "epoch_progress", function(data) {
     trShowCurrentJob(data.job_id);
     var m = data.metrics || {};
     var batch = m.batch || 0;
@@ -410,27 +406,73 @@ function trInitSocket() {
     trRenderMetrics(m);
   });
 
-  socket.on("job_status", function(data) {
+  PluginJobs.on(_YOLO_NS, "job_status", function(data) {
     trShowCurrentJob(data.job_id);
     trLog("[" + data.job_id.slice(0, 8) + "] " + data.status + ": " + data.message);
   });
 
-  socket.on("job_completed", function(data) {
-    trLog("Job completed! Run: " + (data.run_url || "(no run)"));
-    if (data.final_metrics) {
-      trRenderMetrics(data.final_metrics);
-    }
-    trFinishCurrentJob("completed", data.project_name);
-    trLoadProjects();
-  });
-
-  socket.on("job_failed", function(data) {
-    trLog("Job FAILED: " + data.error);
-    trFinishCurrentJob("failed", null);
-  });
-
-  socket.on("queue_update", function(data) {
+  PluginJobs.on(_YOLO_NS, "queue_update", function(data) {
     trRenderQueue(data);
+  });
+}
+
+// ── Generic job channel ─────────────────────────────────────
+// Completion, failure and cancellation ride the host's generic job_update channel —
+// the same record the Queue & Progress panel renders (`run_url`, `error`,
+// `project_name`). The plugin emits no terminal events of its own.
+var _trUntrack = null;
+
+function trTrackJob(jobId) {
+  if (typeof PluginJobs === "undefined") return;
+  if (_trUntrack) _trUntrack();
+  _trUntrack = PluginJobs.track(_YOLO_NS, jobId, {
+    onDone: function(job) {
+      _trUntrack = null;
+      if (job.status === "cancelled") {
+        trLog("Job cancelled.");
+        trFinishCurrentJob("cancelled", job);
+        return;
+      }
+      trLog("Job completed! Run: " + (job.run_url || "(no run)"));
+      trFinishCurrentJob("completed", job);
+      trLoadProjects();
+    },
+    onError: function(job) {
+      _trUntrack = null;
+      trLog("Job FAILED: " + (job.error || job.subtitle || "unknown error"));
+      trFinishCurrentJob("failed", job);
+    }
+  });
+}
+
+// ── Seed on mount ────────────────────────────────────────────
+// The fragment is torn down on navigation and job_update is live-only, so a YOLO
+// job already queued/running when the page mounts has no live event to catch until
+// it next progresses. Ask the host for its durable job list and show a compact
+// running state (the Queue & Progress panel is where the job is watched) instead of
+// the empty "No active job." panel; live epoch updates then resume as they arrive.
+function trSeedFromHost() {
+  if (typeof PluginJobs === "undefined" || !PluginJobs.list) return;
+  PluginJobs.list("yolo").then(function(jobs) {
+    var live = jobs.filter(function(j) { return j.status === "queued" || j.status === "running"; });
+    if (!live.length) return;
+    var job = live[0];
+    trShowCurrentJob(job.id, job.title || "YOLO job");
+    var statusEl = document.getElementById("tr-current-status");
+    statusEl.textContent = job.status;
+    statusEl.className = "tr-queue-status plugin-status-" + job.status;
+    var p = job.progress || {};
+    if (typeof p.percent === "number" && p.percent >= 0) {
+      document.getElementById("tr-epoch-bar").style.width = p.percent.toFixed(1) + "%";
+      document.getElementById("tr-pct-label").textContent = Math.round(p.percent) + "%";
+    }
+    if (p.label) document.getElementById("tr-epoch-label").textContent = p.label;
+    document.getElementById("tr-current-info").textContent =
+      "Job in progress — watch it in the Queue & Progress panel.";
+    trLog("Resumed tracking of " + job.status + " job " + String(job.id).slice(0, 8));
+    trTrackJob(job.id);
+  }).catch(function(e) {
+    trLog("Could not read the host job list: " + String(e));
   });
 }
 
@@ -1178,6 +1220,7 @@ function trStartTraining() {
           }
           trLog("YOLO job submitted: " + trainResp.job_id);
           trShowCurrentJob(trainResp.job_id, _trJobLabel(data));
+          trTrackJob(trainResp.job_id);
         })
         .catch(function(e) { trLog("Error starting training: " + e); });
     })
@@ -1186,8 +1229,9 @@ function trStartTraining() {
 
 // ── Queue Rendering ──────────────────────────────────────────
 // Job state is host-managed (generic Queue & Progress panel) and pushed live over
-// SocketIO (epoch_progress / job_status / job_completed / job_failed). The plugin
-// no longer owns a /queue endpoint, so this is a no-op kept only as a call-site stub.
+// SocketIO (the plugin's epoch_progress / job_status plus the generic job_update).
+// The plugin no longer owns a /queue endpoint, so this is a no-op kept only as a
+// call-site stub.
 function trLoadQueue() {}
 
 // Build a human label for the current-job panel from the submitted form data.
@@ -1218,17 +1262,31 @@ function trShowCurrentJob(jobId, label) {
   if (label) { document.getElementById("tr-current-label").textContent = label; }
 }
 
-// Mark the current-job panel terminal (completed / failed / cancelled).
-function trFinishCurrentJob(status, projectName) {
+// Mark the current-job panel terminal (completed / failed / cancelled) from the
+// generic job record: the Open link targets the job's project (as the Queue card
+// does) and a failure shows the host's `error` text.
+function trFinishCurrentJob(status, job) {
+  job = job || {};
   var statusEl = document.getElementById("tr-current-status");
   statusEl.textContent = status;
   statusEl.className = "tr-queue-status plugin-status-" + status;
   document.getElementById("tr-stop-btn").style.display = "none";
   var openEl = document.getElementById("tr-current-open-link");
   if (openEl) {
+    var projectName = job.project_name || "";
     openEl.innerHTML = projectName
       ? '<a href="/projects/' + encodeURIComponent(projectName) + '" class="btn btn-sm btn-secondary">Open</a>'
       : "";
+  }
+  var infoEl = document.getElementById("tr-current-info");
+  if (infoEl) {
+    if (status === "failed") {
+      infoEl.textContent = job.error || job.subtitle || "Job failed";
+      infoEl.style.color = "var(--danger-color)";
+    } else {
+      infoEl.textContent = "";
+      infoEl.style.color = "";
+    }
   }
   _currentJobId = null;
 }
@@ -1503,6 +1561,7 @@ function trSwapUrls() {
 // ── Init ─────────────────────────────────────────────────────
 (function() {
   trInitSocket();
+  trSeedFromHost();
   trLoadProjects();
   trLoadQueue();
   trLoadModels(function() {});
