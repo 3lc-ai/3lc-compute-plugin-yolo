@@ -1,9 +1,10 @@
 # 3lc-compute-plugin-yolo — the YOLO training plugin for the 3LC compute service, as a standalone
 # single-plugin distribution with its own heavy GPU stack version cadence.
 #
-# Isolation contract: this distribution is NEVER installed into the host venv. The host discovers
-# the plugin via a folder Source pointed at `src/` (dev) or installs it into its OWN managed venv
-# (shop/index/git). The heavy stack (torch / 3lc-ultralytics) lives behind the `[yolo]` extra named
+# Isolation contract: this distribution is NEVER installed into the host venv. The host runs the
+# plugin from its OWN managed venv either way — built from a folder Source pointed at `src/` (dev),
+# or materialized from the installed distribution (shop/index/git). The heavy stack
+# (torch / 3lc-ultralytics) lives behind the `[yolo]` extra named
 # by the manifest's runtime.provision_extra and is installed ONLY into that provisioned venv —
 # never the host venv. Base `dependencies` is the SDK floor only.
 [build-system]
