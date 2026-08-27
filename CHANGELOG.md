@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   job continues in the Queue & Progress panel.
 
 ### Changed
+- Requires plugin SDK `3lc-compute-plugin-sdk>=0.3.1,<0.4.0`, pinned without the `[shared]`
+  extra: since SDK 0.3.1 the `3lc` data plane is a base dependency of the SDK, and the extra is a
+  deprecated no-op.
 - The plugin SDK pin is `>=0.3.0,<0.4.0`. Job completion, failure and cancellation now ride
   the host's generic job channel: the 3LC run URL is published as the job's result as soon as
   the run is created (so the Queue's Open link appears mid-training), and a failed job shows

@@ -21,9 +21,9 @@ requires-python = ">=3.10"
 # work must itself be AGPL-3.0. Full text in ./LICENSE.
 license = "AGPL-3.0-only"
 # Base = the SDK floor ONLY. The heavy stack rides the [yolo] extra below and is installed only
-# into the plugin's provisioned venv. [shared] = the SDK's optional `tlc` data plane.
+# into the plugin's provisioned venv. The SDK brings the `tlc` data plane (`3lc[pandas]`).
 dependencies = [
-    "3lc-compute-plugin-sdk[shared]>=0.3.0,<0.4.0",
+    "3lc-compute-plugin-sdk>=0.3.1,<0.4.0",
 ]
 
 # The plugin's heavy stack — installed ONLY into the provisioned venv (uv sync --extra yolo, or
@@ -36,7 +36,7 @@ yolo = [
     "torchvision",
     # Dimensionality reduction: the plugin materializes pacmap/umap-reduced tables in its OWN
     # provisioned venv, so it needs tlc's PacmapTable/UmapTable (pacmap / umap-learn / joblib /
-    # scikit-learn). `[shared]` only brings `3lc[pandas]`; unioned here that yields
+    # scikit-learn). The SDK brings `3lc[pandas]`; unioned here that yields
     # `3lc[pandas,pacmap,umap]` in the venv. Mirrors the host's spec in 3lc-compute.
     "3lc[pacmap,umap]>=3.0.0,<4.0.0",
 ]
