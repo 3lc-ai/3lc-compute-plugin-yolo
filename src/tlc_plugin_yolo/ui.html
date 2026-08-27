@@ -766,6 +766,13 @@ function trOnTrainTableChange() {
         var projInput = document.getElementById("tr-3lc-project");
         if (data.project_name && !projInput.value.trim()) {
           projInput.value = data.project_name;
+          // Mark this as OUR guess rather than the user's choice: detect-task derives the
+          // name server-side, and for stamping the job we would rather resolve it from the
+          // frontend's own index (see _trResolveProjectName). Cleared once the user types.
+          projInput.dataset.autofilled = "1";
+          projInput.addEventListener("input", function() {
+            delete projInput.dataset.autofilled;
+          }, { once: true });
         }
         trPopulateModelDropdown(data.task);
         // Re-render params to filter checkpoint options by detected task
@@ -1179,6 +1186,54 @@ function trRenderParamFields(fields, savedValues) {
 }
 
 // ── Training ─────────────────────────────────────────────────
+
+/**
+ * The project name to stamp the job with, so it appears in that project's Queue &
+ * Progress panel.
+ *
+ * The panel polls /api/plugins/jobs?project=<name> and the host matches the job's
+ * stamped project_name EXACTLY, against a PROJECT_NAME the Hub takes from its own
+ * index. So the stamp has to speak the index's vocabulary or the job is invisible.
+ *
+ * Precedence deliberately mirrors what run_job does when it decides where the RUN
+ * goes, so run and job always land in the same project:
+ *
+ *   1. A project the user actually typed — run_job passes it straight to tlc, so
+ *      that is where the run is written.
+ *   2. Otherwise the train table's project as the frontend's index reports it.
+ *      run_job derives the same thing server-side from the table; resolving it here
+ *      instead means the string comes from the same source the page filters by, so
+ *      it matches by construction. A value detect-task auto-filled counts as a guess,
+ *      not a choice (see the `autofilled` marker), and is superseded here.
+ *   3. Otherwise the launch context — empty when launched bare from the sidebar, in
+ *      which case the job only shows on the global Queue page, which is intended.
+ *
+ * @param {string} trainUrl - Selected train table URL.
+ * @returns {string} Project name to stamp, or '' when nothing can be resolved.
+ */
+function _trResolveProjectName(trainUrl) {
+  var projInput = document.getElementById("tr-3lc-project");
+  var typed = ((projInput && projInput.value) || "").trim();
+  var wasAutofilled = !!(projInput && projInput.dataset && projInput.dataset.autofilled === "1");
+  if (typed && !wasAutofilled) return typed;
+
+  var api = window.PLUGIN_API;
+  var data = api && api.data;
+  if (trainUrl && data && typeof data.getTables === "function") {
+    try {
+      var rows = data.getTables() || [];
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i] && rows[i].url === trainUrl && rows[i].project_name) {
+          return rows[i].project_name;
+        }
+      }
+    } catch (e) {
+      // Index unavailable (older host, or TlcData not mounted) — fall through.
+    }
+  }
+  return typed || ((api && api.context && api.context.projectName) || "");
+}
+
 function trStartTraining() {
   var data = trCollectFormData();
   if (!data.train_table_url.trim()) {
@@ -1211,7 +1266,7 @@ function trStartTraining() {
       // never reaches the job record. (project_id is the yolo CONFIG id.)
       _trPost("/api/plugins/yolo/run", {
         project_id: resp.id,
-        project_name: (document.getElementById("tr-3lc-project").value || "").trim(),
+        project_name: _trResolveProjectName(data.train_table_url),
       })
         .then(function(trainResp) {
           if (trainResp.error) {
