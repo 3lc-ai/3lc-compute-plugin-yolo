@@ -1205,17 +1205,27 @@ function trStartTraining() {
       localStorage.setItem(_STORAGE_KEY, currentProjectId);
       trLoadProjects();
 
-      // Start training (host-managed via the unified run_job contract)
-      // project_name attributes the job in the generic Queue & Progress panel —
-      // the host reads it from the run body only; the value in the saved config
-      // never reaches the job record. (project_id is the yolo CONFIG id.)
-      _trPost("/api/plugins/yolo/run", {
+      // Start training (host-managed via the unified run_job contract) through the
+      // SDK's PluginJobs client. project_name attributes the job in the generic
+      // Queue & Progress panel — the host reads it from the run body only; the value
+      // in the saved config never reaches the job record. Left blank, PluginJobs
+      // fills it from the launch context (the project page the plugin was opened
+      // from). (project_id is the yolo CONFIG id.)
+      if (typeof PluginJobs === "undefined") {
+        trLog("Error: job tracker unavailable — reload the page.");
+        return;
+      }
+      PluginJobs.start("yolo", {
         project_id: resp.id,
         project_name: (document.getElementById("tr-3lc-project").value || "").trim(),
       })
         .then(function(trainResp) {
-          if (trainResp.error) {
-            trLog("Error: " + trainResp.error);
+          if (!trainResp || trainResp.error) {
+            trLog("Error: " + ((trainResp && trainResp.error) || "failed to start job"));
+            return;
+          }
+          if (!trainResp.job_id) {
+            trLog(_trNotStartedMessage(trainResp));
             return;
           }
           trLog("YOLO job submitted: " + trainResp.job_id);
@@ -1225,6 +1235,22 @@ function trStartTraining() {
         .catch(function(e) { trLog("Error starting training: " + e); });
     })
     .catch(function(e) { trLog("Error: " + e); });
+}
+
+// /run answers {status, provisioning} instead of a job while the plugin's
+// environment is still being built (or its last build failed) — say so, rather
+// than tracking an undefined job id.
+function _trNotStartedMessage(resp) {
+  var prov = resp.provisioning || {};
+  var state = prov.state || resp.status || "unknown";
+  if (state === "failed") {
+    return "Plugin environment build failed" + (prov.error ? ": " + prov.error : "") +
+      " — see Settings → Plugins.";
+  }
+  if (state === "provisioning" || state === "unprovisioned") {
+    return "Plugin environment is still being set up (" + state + ") — try again in a moment.";
+  }
+  return "Job was not started (status: " + state + ").";
 }
 
 // ── Queue Rendering ──────────────────────────────────────────

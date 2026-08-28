@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Training jobs are launched through the SDK's `PluginJobs.start` instead of a hand-rolled
+  `POST /run`. A job started from a project page with the 3LC Project field left blank is now
+  stamped with that project and appears in its Queue & Progress panel (an explicit project
+  still wins). When the host answers that the plugin environment is still being built (or its
+  build failed), the log says so instead of tracking an undefined job id.
+
 ## [0.2.2] - 2026-08-27
 
 ### Added
