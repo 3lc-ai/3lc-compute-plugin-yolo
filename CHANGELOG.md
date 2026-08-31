@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-31
+
 ### Changed
 - Training jobs are launched through the SDK's `PluginJobs.start` instead of a hand-rolled
   `POST /run`. A job started from a project page with the 3LC Project field left blank is now
