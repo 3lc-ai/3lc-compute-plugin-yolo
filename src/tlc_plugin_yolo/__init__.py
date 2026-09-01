@@ -13,6 +13,8 @@ it to the frozen training config, exactly as the old runner did.
 
 from __future__ import annotations
 
+import contextlib
+import dataclasses
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,6 +27,26 @@ if TYPE_CHECKING:
     from tlc_plugin_sdk.job_context import JobContext
 
 logger = logging.getLogger(__name__)
+
+
+def _project_from_inline(raw: Any, *, log: Any) -> Any:
+    """Build a ``TrainingProject`` from an inline run-body dict, or ``None``.
+
+    Tolerant like the store's own reader: unknown keys are dropped and missing ones
+    default, so an older (or newer) fragment's payload still loads. Anything that is
+    not a non-empty dict — absent, null, wrong type — resolves to ``None`` and the
+    caller falls back to the local store.
+    """
+    if not isinstance(raw, dict) or not raw:
+        return None
+    from tlc_plugin_yolo.project_store import TrainingProject
+
+    try:
+        known = {f.name for f in dataclasses.fields(TrainingProject)}
+        return TrainingProject(**{k: v for k, v in raw.items() if k in known})
+    except Exception as exc:
+        log(f"Warning: ignoring invalid inline project_config: {exc}")
+        return None
 
 
 class YoloPlugin(ComputePlugin):
@@ -101,10 +123,13 @@ class YoloPlugin(ComputePlugin):
         params_in = ctx.params
         project_id = str(params_in.get("project_id", "") or "").strip()
 
-        # Resolve project_id → frozen config via the store (as the runner did).
-        project = None
+        # Resolve the frozen config. An inline ``project_config`` wins: a remote worker
+        # on a GPU node has no controller-local store, so the run body must be
+        # self-contained (SDK guide, "Run-body conventions for remote workers"). The
+        # store lookup stays as the fallback for older fragments / direct API calls.
+        project = _project_from_inline(params_in.get("project_config"), log=ctx.log)
         store = get_store()
-        if project_id and store:
+        if project is None and project_id and store:
             project = store.get_project(project_id)
         if project is None:
             ctx.fail("Project not found" if project_id else "project_id is required")
@@ -303,7 +328,10 @@ class YoloPlugin(ComputePlugin):
                 # ride the plugin-specific epoch_progress event, never ctx.metric.
                 ctx.progress(percent=100.0, label="Done")
                 if store:
-                    store.update_last_run(project.id)
+                    # Best-effort: on a remote worker the store exists but is empty (the
+                    # config arrived inline) — bookkeeping must not fail the finished job.
+                    with contextlib.suppress(Exception):
+                        store.update_last_run(project.id)
 
             # The run link is the job's result (the Queue's Open button). Usually
             # already published from on_status; re-publish the final value in case
