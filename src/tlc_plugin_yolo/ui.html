@@ -130,6 +130,7 @@
             <button type="button" class="btn btn-secondary btn-sm" onclick="openTablePicker('tr-train-url')">Browse</button>
           </div>
           <div class="form-help">Select your training data table. The task type (detection, segmentation, classification) is auto-detected from the table schema.</div>
+          <div id="tr-run-target-data-note" class="form-help" style="display:none"></div>
         </div>
         <div style="display:flex;justify-content:center">
           <button type="button" class="btn btn-ghost btn-sm" onclick="trSwapUrls()" title="Swap train / val URLs"
@@ -739,8 +740,31 @@ function trCollectFormData() {
 // ── Task Detection ───────────────────────────────────────────
 var _detectDebounce = null;
 
+// Selection-time data check against the host's "Run on:" target: warn the moment a
+// table is picked, not when Train is pressed. Optional host API — feature-detected,
+// silent on frontends that predate it.
+function trCheckTableAgainstRunTarget() {
+  var note = document.getElementById("tr-run-target-data-note");
+  if (!note || !window.PLUGIN_API || typeof PLUGIN_API.checkDataForRunTarget !== "function") return;
+  var url = document.getElementById("tr-train-url").value.trim();
+  var target = (typeof PLUGIN_API.getRunTarget === "function") ? PLUGIN_API.getRunTarget() : { target: "local" };
+  if (!url || target.target !== "node") { note.style.display = "none"; return; }
+  PLUGIN_API.checkDataForRunTarget(url).then(function (verdict) {
+    if (document.getElementById("tr-train-url").value.trim() !== url) return;  // stale
+    if (verdict.ok && !verdict.notes.length) { note.style.display = "none"; return; }
+    note.textContent = (verdict.ok ? "⚠️ " : "❌ This will NOT run on the GPU node: ") +
+      verdict.notes.join(" ");
+    note.style.color = verdict.ok ? "var(--warning, #d97706)" : "var(--error, #dc2626)";
+    note.style.display = "";
+  }).catch(function () { note.style.display = "none"; });
+}
+if (window.PLUGIN_API && typeof PLUGIN_API.onRunTargetChange === "function") {
+  PLUGIN_API.onRunTargetChange(trCheckTableAgainstRunTarget);
+}
+
 function trOnTrainTableChange() {
   trScheduleAutoSave();
+  trCheckTableAgainstRunTarget();
   clearTimeout(_detectDebounce);
   _detectDebounce = setTimeout(function() {
     var url = document.getElementById("tr-train-url").value.trim();
