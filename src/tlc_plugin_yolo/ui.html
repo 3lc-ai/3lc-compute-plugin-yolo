@@ -682,7 +682,15 @@ function trLoadProject(projectId) {
       setTimeout(function() { trTakeSnapshot(); trCheckDirty(); }, 100);
       trLoadProjects();
     })
-    .catch(function(e) { trLog("Error loading project: " + e); });
+    .catch(function(e) {
+      trLog("Error loading project: " + e);
+      // A remembered id that no longer resolves (deleted, or saved by a worker that is
+      // gone) must not re-error on every mount — forget it and start clean next time.
+      if (/\b404\b/.test(String(e)) && localStorage.getItem(_STORAGE_KEY) === projectId) {
+        localStorage.removeItem(_STORAGE_KEY);
+        if (currentProjectId === projectId) currentProjectId = null;
+      }
+    });
 }
 
 function trDeleteProject() {
@@ -746,6 +754,9 @@ var _detectDebounce = null;
 function trCheckTableAgainstRunTarget() {
   var note = document.getElementById("tr-run-target-data-note");
   if (!note || !window.PLUGIN_API || typeof PLUGIN_API.checkDataForRunTarget !== "function") return;
+  // Newer hosts annotate EVERY table input themselves (train and val alike) — leave the
+  // note to them so it is not shown twice. This path only serves older frontends.
+  if (PLUGIN_API.hostChecksTableInputs) { note.style.display = "none"; return; }
   var url = document.getElementById("tr-train-url").value.trim();
   var target = (typeof PLUGIN_API.getRunTarget === "function") ? PLUGIN_API.getRunTarget() : { target: "local" };
   if (!url || target.target !== "node") { note.style.display = "none"; return; }

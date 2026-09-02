@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Selecting a saved config while a GPU node is armed no longer 404s: the host now keeps the
+  config store on the controller (only routes a plugin declares in `node_routes` follow the
+  node), so the config history is the same no matter which node you were on. A remembered
+  config id that no longer resolves is forgotten instead of erroring on every page load.
+- The validation table gets the same "will be copied / copy or stream / will NOT run on the
+  node" note as the training table, and the same data preparation before a node run. Both are
+  host-owned now (`PLUGIN_API.hostChecksTableInputs`); the plugin's own train-only note yields
+  to the host's on frontends that provide it.
+
 ## [0.2.3] - 2026-08-31
 
 ### Changed
