@@ -20,13 +20,20 @@ def register_model(model: BaseTrainingModel) -> None:
     logger.info("Registered training model: %s (%s)", model.name, model.display_name)
 
 
+# Why the registry is empty, when it is — shown to the person instead of a blank dropdown.
+DISCOVERY_ERROR: str = ""
+
+
 def discover_models() -> None:
     """Import model modules to trigger registration."""
+    global DISCOVERY_ERROR  # module-level status, read by the /models/status route
     try:
         from tlc_plugin_yolo.models import yolo  # noqa: F401
-    except ImportError:
-        logger.warning("YOLO model not available (3lc-ultralytics not installed)")
-    except Exception:
+    except ImportError as exc:
+        DISCOVERY_ERROR = f"{type(exc).__name__}: {exc}"
+        logger.warning("YOLO model not available: %s", DISCOVERY_ERROR)
+    except Exception as exc:
+        DISCOVERY_ERROR = f"{type(exc).__name__}: {exc}"
         logger.exception("Failed to load YOLO model")
 
     if MODEL_REGISTRY:

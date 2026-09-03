@@ -849,9 +849,31 @@ function trPopulateModelDropdown(taskType, onReady) {
       select.value = compatible[0];
       trOnModelChange();
     }
+    trExplainEmptyModels(models.length === 0);
 
     if (onReady) onReady();
   });
+}
+
+// No models at all means the model module did not import; say why, in the person's words,
+// instead of an empty dropdown (found live on a bare Ubuntu server: OpenCV could not load libGL).
+function trExplainEmptyModels(empty) {
+  var select = document.getElementById("tr-model-select");
+  var note = document.getElementById("tr-model-note");
+  if (!empty) { if (note) note.remove(); return; }
+  if (!note) {
+    note = document.createElement("div");
+    note.id = "tr-model-note";
+    note.style.cssText = "margin-top:6px;font-size:12px;line-height:1.5;color:var(--danger, #c0392b)";
+    select.parentNode.insertBefore(note, select.nextSibling);
+  }
+  note.textContent = "No models could be loaded.";
+  _trFetchJson("/api/plugins/yolo/models/status")
+    .then(function(st) {
+      if (!st || (!st.error && !st.hint)) return;
+      note.textContent = "No models could be loaded. " + (st.hint ? st.hint + " " : "") + (st.error ? "(" + st.error + ")" : "");
+    })
+    .catch(function() {});
 }
 
 function trOnModelChange() {
