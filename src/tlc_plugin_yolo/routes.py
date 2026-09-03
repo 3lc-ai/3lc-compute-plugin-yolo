@@ -56,6 +56,26 @@ def get_route_handlers() -> list[BaseRouteHandler]:
             for m in MODEL_REGISTRY.values()
         ]
 
+    @get("/models/status", sync_to_thread=True)
+    def models_status() -> dict[str, Any]:
+        """How many models loaded and, when none did, why — in words the UI can show.
+
+        Found live: on a bare Ubuntu server OpenCV's wheel could not dlopen libGL, the
+        ultralytics import failed, and the model dropdown was simply empty.
+        """
+        from tlc_plugin_yolo import models as models_pkg
+
+        error = models_pkg.DISCOVERY_ERROR
+        hint = ""
+        if "libGL" in error or "libgthread" in error or "libglib" in error:
+            hint = (
+                "OpenCV needs system libraries this machine lacks: "
+                "install libgl1 and libglib2.0-0, then reload the plugin."
+            )
+        elif "tlc_ultralytics" in error or "ultralytics" in error:
+            hint = "The [yolo] extra is not installed in this plugin's environment: reinstall the plugin with it."
+        return {"count": len(MODEL_REGISTRY), "error": error, "hint": hint}
+
     # get_params() is model-defined (list or dict, heterogeneous by model) → Any body.
     @get("/models/{name:str}/params", sync_to_thread=True)
     def model_params(name: FromPath[str]) -> Response[Any]:
