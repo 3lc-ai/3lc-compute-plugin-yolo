@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-09-07
+
+### Changed
+- Requires `3lc>=3.3.0` (was `>=3.0.0`), so the plugin venv resolves the current 3lc release.
+
 ## [0.2.3] - 2026-08-31
 
 ### Changed
