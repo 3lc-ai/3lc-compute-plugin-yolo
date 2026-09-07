@@ -6,8 +6,10 @@ name = "Ultralytics YOLO"
 description = "Fine-tune Ultralytics YOLO models on your data with live metrics, SocketIO progress, and experiment tracking. Uses Ultralytics YOLO (AGPL-3.0); commercial use may require an Ultralytics Enterprise License."
 version = "0.2.3"
 min_service_version = "0.1.0"
-icon = "◈"
-icon_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="10" height="10" rx="1"/><rect x="5" y="5" width="6" height="6" rx="0.5" stroke-dasharray="2 1"/></svg>'
+icon = "🔶"
+# The sidebar icon is Ultralytics' own mark drawn in one colour, so it sits with the Hub's other
+# icons; the page hero carries the full wordmark, as their site does.
+icon_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="m12.736 7.341-.002 2.897c.012 3.953-3.188 7.177-7.098 7.171-1.553-.003-2.967-.48-4.112-1.313 2.056 3.725 5.999 6.24 10.48 6.245 6.511-.003 11.891-5.343 11.992-11.91l-.002-.027c.006-.151 0-2.951.006-3.075-.01-3.116-2.538-5.677-5.63-5.67-3.105-.006-5.645 2.54-5.634 5.683zM5.629 4.573C2.525 4.573 0 7.118 0 10.246s2.525 5.673 5.63 5.673c3.103 0 5.629-2.545 5.629-5.673s-2.526-5.673-5.63-5.673"/></svg>'
 
 [ui]
 display_mode = "sidebar"
