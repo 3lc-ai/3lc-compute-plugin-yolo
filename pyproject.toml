@@ -13,7 +13,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "3lc-compute-plugin-yolo"
-version = "0.2.3"
+version = "0.2.4"
 description = "Ultralytics YOLO training plugin for the 3LC compute service."
 readme = "README-wheel.md"
 requires-python = ">=3.10"
@@ -38,7 +38,7 @@ yolo = [
     # provisioned venv, so it needs tlc's PacmapTable/UmapTable (pacmap / umap-learn / joblib /
     # scikit-learn). The SDK brings `3lc[pandas]`; unioned here that yields
     # `3lc[pandas,pacmap,umap]` in the venv. Mirrors the host's spec in 3lc-compute.
-    "3lc[pacmap,umap]>=3.0.0,<4.0.0",
+    "3lc[pacmap,umap]>=3.3.0,<4.0.0",
 ]
 
 # Advertised for the optional installed-package / index-install discovery path. Value = the import
