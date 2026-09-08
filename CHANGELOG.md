@@ -7,15 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The run body carries the frozen training config inline (`project_config`) and `run_job`
+  prefers it over the `project_id` store lookup, so a job is self-contained: a worker whose
+  store does not hold the config (a fresh machine) can still run it. The store lookup remains
+  the fallback for older fragments and direct API calls.
+- `GET /models/status` reports how many models loaded and, when none did, why. The page shows
+  that reason under an empty model dropdown instead of a blank list (seen on a bare Ubuntu
+  server where OpenCV could not load libGL and the ultralytics import failed).
+- On a frontend that offers a run-target data check (`PLUGIN_API.checkDataForRunTarget`), the
+  training table is checked the moment it is picked and the verdict shown under the field. The
+  plugin's own note yields to the host's when the host annotates table inputs itself
+  (`PLUGIN_API.hostChecksTableInputs`). Frontends without these members see no change.
+- The sidebar icon and the page hero carry Ultralytics' own mark and wordmark.
+
 ### Fixed
-- Selecting a saved config while a GPU node is armed no longer 404s: the host now keeps the
-  config store on the controller (only routes a plugin declares in `node_routes` follow the
-  node), so the config history is the same no matter which node you were on. A remembered
-  config id that no longer resolves is forgotten instead of erroring on every page load.
-- The validation table gets the same "will be copied / copy or stream / will NOT run on the
-  node" note as the training table, and the same data preparation before a node run. Both are
-  host-owned now (`PLUGIN_API.hostChecksTableInputs`); the plugin's own train-only note yields
-  to the host's on frontends that provide it.
+- A remembered config id that no longer resolves (404) is forgotten instead of erroring on
+  every page load.
+- Recording `last_run` on the saved config after a finished run is best-effort: it no longer
+  fails a completed job when the store has no such config.
 
 ## [0.2.4] - 2026-09-07
 
