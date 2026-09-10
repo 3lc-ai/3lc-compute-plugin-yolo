@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-09-10
+
 ### Added
 - The run body carries the frozen training config inline (`project_config`) and `run_job`
   prefers it over the `project_id` store lookup, so a job is self-contained: a worker whose
@@ -26,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every page load.
 - Recording `last_run` on the saved config after a finished run is best-effort: it no longer
   fails a completed job when the store has no such config.
+
+### Changed
+- Requires plugin SDK `>=0.4.0,<0.5.0` (was `>=0.3.1,<0.4.0`).
 
 ## [0.2.4] - 2026-09-07
 
