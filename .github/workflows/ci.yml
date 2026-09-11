@@ -31,3 +31,28 @@ jobs:
 
       - name: Ruff format check
         run: uvx --from 'ruff>=0.15,<0.16' ruff format --check .
+
+  version-parity:
+    name: plugin manifest version matches pyproject
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.8.15"
+
+      # Same check the release workflow runs at tag time, but here on every push/PR to main —
+      # so a version bump that only touched pyproject.toml fails fast instead of failing after
+      # the tag is already pushed.
+      - name: Verify plugin manifest matches pyproject version
+        run: |
+          PKG=$(uv version --output-format json | jq -r '.version')
+          FAIL=0
+          for MANIFEST in src/*/plugin.toml; do
+            V=$(grep -Po '^version\s*=\s*"\K[^"]+' "$MANIFEST")
+            echo "$MANIFEST: $V"
+            [ "$V" = "$PKG" ] || { echo "::error::$MANIFEST version $V != pyproject version $PKG"; FAIL=1; }
+          done
+          exit $FAIL
