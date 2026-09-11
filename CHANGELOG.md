@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-09-11
+
+### Fixed
+- `plugin.toml` version now matches the package version. 0.2.5's release commit bumped
+  `pyproject.toml` but not the manifest, which failed the release workflow's version-parity
+  gate before publish — 0.2.5 never reached PyPI.
+
 ## [0.2.5] - 2026-09-10
 
 ### Added

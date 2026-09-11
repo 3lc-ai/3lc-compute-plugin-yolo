@@ -4,7 +4,7 @@
 id = "yolo"
 name = "Ultralytics YOLO"
 description = "Fine-tune Ultralytics YOLO models on your data with live metrics, SocketIO progress, and experiment tracking. Uses Ultralytics YOLO (AGPL-3.0); commercial use may require an Ultralytics Enterprise License."
-version = "0.2.4"
+version = "0.2.6"
 min_service_version = "0.1.0"
 icon = "🔶"
 # The sidebar icon is Ultralytics' own mark drawn in one colour, so it sits with the Hub's other
