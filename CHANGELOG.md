@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A job on a worker with no models says why.** When model discovery failed, a run died with
+  "Model 'yolov8' not found in registry" while the real cause sat in the worker's log — seen twice
+  on one remote node: an API key refused by the production account service, then an unwritable
+  project root. The job failure now carries the discovery error and a hint for the known causes,
+  discovery is retried once before giving up, and the models status route shares the same hints.
+
 ## [0.2.6] - 2026-09-11
 
 ### Fixed

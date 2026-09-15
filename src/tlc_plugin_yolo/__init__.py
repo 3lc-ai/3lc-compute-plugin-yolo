@@ -117,7 +117,7 @@ class YoloPlugin(ComputePlugin):
 
         from tlc_plugin_sdk.shared.generic_job import epoch_progress
 
-        from tlc_plugin_yolo.models import MODEL_REGISTRY
+        from tlc_plugin_yolo.models import MODEL_REGISTRY, ensure_discovered, registry_failure_message
         from tlc_plugin_yolo.runtime import get_store
 
         params_in = ctx.params
@@ -134,10 +134,12 @@ class YoloPlugin(ComputePlugin):
         if project is None:
             ctx.fail("Project not found" if project_id else "project_id is required")
 
-        # Look up the model in the registry (populated by discover_models()).
+        # Look up the model in the registry (populated by discover_models()). An empty registry
+        # is a discovery failure, and the job says why rather than "not found".
+        ensure_discovered()
         model = MODEL_REGISTRY.get(project.model_name)
         if model is None:
-            ctx.fail(f"Model '{project.model_name}' not found in registry")
+            ctx.fail(registry_failure_message(project.model_name))
 
         mode = project.mode or "train"
         mode_label = "Collection" if mode == "collect" else "Training"
