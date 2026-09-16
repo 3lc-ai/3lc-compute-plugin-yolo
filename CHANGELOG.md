@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Require plugin SDK `>=0.5.0,<0.6.0` and lock the private POC build.
+- Stamp and validate package and manifest versions together before publication.
+- Manual builds publish only to private CloudRepo when explicitly requested.
+
+
 ## [0.2.6] - 2026-09-11
 
 ### Fixed

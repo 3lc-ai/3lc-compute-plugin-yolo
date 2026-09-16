@@ -47,3 +47,20 @@ To develop against a sibling `3lc-plugin-sdk` checkout, override its source **un
 
 The plugin contract and author guide live in
 [`3lc-plugin-sdk`](https://3lc-ai.github.io/3lc-plugin-sdk/).
+
+## POC SDK and publishing
+
+During POC, SDK 0.5 is installed from private CloudRepo. Configure your shell before
+`uv sync --locked --group dev` (keep tokens out of source files):
+
+```bash
+export UV_INDEX=poc=https://pypi.3lc.ai/repositories/prereleases/
+export UV_INDEX_STRATEGY=unsafe-first-match
+export UV_INDEX_POC_USERNAME="<CloudRepo username>"
+export UV_INDEX_POC_PASSWORD="<CloudRepo token>"
+```
+
+Run the Release workflow manually for a verified build artifact. Set `publish=true` to
+upload it to private CloudRepo; publishing is disabled by default. Distribution and manifest
+versions receive the same timestamp, run and attempt suffix. Public PyPI publishing remains
+a separate `v*` tag flow. No public release is needed during POC.
