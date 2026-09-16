@@ -23,7 +23,7 @@ license = "AGPL-3.0-only"
 # Base = the SDK floor ONLY. The heavy stack rides the [yolo] extra below and is installed only
 # into the plugin's provisioned venv. The SDK brings the `tlc` data plane (`3lc[pandas]`).
 dependencies = [
-    "3lc-compute-plugin-sdk>=0.4.0,<0.5.0",
+    "3lc-compute-plugin-sdk>=0.5.0,<0.6.0",
 ]
 
 # The plugin's heavy stack — installed ONLY into the provisioned venv (uv sync --extra yolo, or
@@ -61,9 +61,7 @@ explicit = true
 [tool.uv.sources]
 torch = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
 torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
-# Both `3lc` and `3lc-compute-plugin-sdk` resolve from public PyPI (the SDK's home since
-# 0.2.2). For side-by-side local dev, override UNCOMMITTED, e.g.
-#   3lc-compute-plugin-sdk = { path = "../3lc-compute-plugin-sdk", editable = true }
+# POC SDK builds use the authenticated index documented in README.md.
 
 # Ruff config mirrors 3lc-compute-plugin-sdk for a consistent house style. CI runs ruff standalone (uvx) —
 # linting must not require resolving the heavy ML stack.
@@ -82,3 +80,6 @@ convention = "google"
 [tool.ruff.format]
 preview = true
 docstring-code-format = true
+
+[dependency-groups]
+dev = ["pytest>=8,<9"]
