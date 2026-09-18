@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Instance-embedding settings are hidden for a classification table instead of defaulting
+  to enabled. A classification model has no per-instance regions to pool embeddings from,
+  so the integration raised mid-run. A parameter field can now declare the tasks it applies
+  to (`"tasks": [...]`, the field-level twin of the per-option `task` tag on the checkpoint
+  dropdown); the fragment does not render a field the detected task does not support, and
+  `train()` / `collect()` drop its value from a config saved before the tag or a run body
+  posted straight to the API. The 3LC Settings card names what the task hid.
+
 ### Changed
 - Require plugin SDK `>=0.5.0,<0.6.0` and lock the private POC build.
 - Stamp and validate package and manifest versions together before publication.
