@@ -58,10 +58,19 @@ name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
+# Unreleased 3LC builds resolve from the private staging index; it is `explicit`, so only the
+# dists routed to it in [tool.uv.sources] come from there. Credentials:
+# UV_INDEX_STAGING_USERNAME / UV_INDEX_STAGING_PASSWORD (README.md).
+[[tool.uv.index]]
+name = "staging"
+url = "https://pypi.3lc.ai/repositories/prereleases/"
+explicit = true
+
 [tool.uv.sources]
 torch = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
 torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
-# POC SDK builds use the authenticated index documented in README.md.
+# SDK 0.5 is not on PyPI yet; drop this line once it is.
+3lc-compute-plugin-sdk = { index = "staging" }
 
 # Ruff config mirrors 3lc-compute-plugin-sdk for a consistent house style. CI runs ruff standalone (uvx) —
 # linting must not require resolving the heavy ML stack.
