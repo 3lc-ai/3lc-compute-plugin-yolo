@@ -14,8 +14,8 @@ concurrency:
 # pyproject.toml routes the unreleased plugin SDK to its explicit `staging` index; uv applies
 # these credentials to that index by name. Everything else resolves from PyPI.
 env:
-  UV_INDEX_STAGING_USERNAME: ${{ secrets.STAGING_INDEX_READ_USERNAME }}
-  UV_INDEX_STAGING_PASSWORD: ${{ secrets.STAGING_INDEX_READ_PASSWORD }}
+  UV_INDEX_STAGING_USERNAME: ${{ secrets.CLOUDREPO_READ_USERNAME || secrets.CLOUDREPO_USERNAME }}
+  UV_INDEX_STAGING_PASSWORD: ${{ secrets.CLOUDREPO_READ_PASSWORD || secrets.CLOUDREPO_PASSWORD }}
 
 jobs:
   ruff:
