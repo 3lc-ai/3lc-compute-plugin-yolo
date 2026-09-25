@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import traceback
 from pathlib import Path
 from typing import Any, ClassVar
@@ -16,6 +17,18 @@ from tlc_ultralytics.settings import Settings
 
 from tlc_plugin_yolo.models import register_model
 from tlc_plugin_yolo.models.base import BaseTrainingModel
+
+
+def _set_root_url(settings_kwargs: dict[str, Any], params: dict[str, Any]) -> None:
+    """Route the run (and any tables it creates) to the job's project root, when the integration can.
+
+    ``Settings.root_url`` arrives with a newer 3lc-ultralytics; an older one has no such field, and the
+    run then lands under the worker's configured root as before.
+    """
+    root = str(params.get("_project_root_url", "") or "").strip()
+    if root and "root_url" in {f.name for f in dataclasses.fields(Settings)}:
+        settings_kwargs["root_url"] = root
+
 
 # Map our task names to YOLO task names
 _TASK_MAP = {
@@ -416,6 +429,7 @@ class YOLOModel(BaseTrainingModel):
         if epoch_start and str(epoch_start).strip():
             settings_kwargs["collection_epoch_start"] = int(epoch_start)
 
+        _set_root_url(settings_kwargs, params)
         settings = Settings(**settings_kwargs)
         on_status(f"3LC Settings: {settings_kwargs}")
 
@@ -649,6 +663,7 @@ class YOLOModel(BaseTrainingModel):
         if instance_layer and str(instance_layer).strip():
             settings_kwargs["instance_embeddings_layer"] = int(instance_layer)
 
+        _set_root_url(settings_kwargs, params)
         settings = Settings(**settings_kwargs)
         on_status(f"3LC Settings: {settings_kwargs}")
 

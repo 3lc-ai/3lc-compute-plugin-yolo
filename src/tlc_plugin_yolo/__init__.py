@@ -183,6 +183,9 @@ class YoloPlugin(ComputePlugin):
             params["_run_name"] = project.run_name
         if project.task_type:
             params["_task_type"] = project.task_type
+        root = ctx.project_root_url
+        if root:
+            params["_project_root_url"] = root
 
         # ── Timing bookkeeping (lifted from the old runner) ──
         _last_metrics: dict[str, Any] = {}
