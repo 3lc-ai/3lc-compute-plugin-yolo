@@ -919,9 +919,24 @@ function trLoadModelParams(modelName, savedValues) {
     });
 }
 
-function trRenderParamFields(fields, savedValues) {
+// A field may declare the tasks it applies to ("tasks": [...]) — the field-level twin
+// of the per-option "task" tag that narrows the checkpoint dropdown. A field the
+// detected task does not support is not rendered at all, so it cannot ride along in
+// the saved config: instance embeddings have no per-instance regions to pool from on a
+// classification model, and asking for them made the integration raise mid-run.
+// Nothing is filtered until detection has answered.
+function trFieldAppliesToTask(f) {
+  if (!f.tasks || !f.tasks.length) return true;
+  if (!detectedTask || detectedTask === "unknown") return true;
+  return f.tasks.indexOf(detectedTask) !== -1;
+}
+
+function trRenderParamFields(allFields, savedValues) {
   var container = document.getElementById("tr-params-container");
   container.innerHTML = "";
+
+  var fields = allFields.filter(trFieldAppliesToTask);
+  var hiddenFields = allFields.filter(function(f) { return !trFieldAppliesToTask(f); });
 
   // Group fields — skip "3LC Settings" as those render in their own card
   var groups = {};
@@ -1235,6 +1250,18 @@ function trRenderParamFields(fields, savedValues) {
       });
       tlcSection.appendChild(cbRow);
     }
+  }
+
+  // Say why the task-specific settings are missing — a silently shorter form reads as
+  // a bug, and people go looking for the embeddings switch they used on a detection table.
+  var hiddenTlc = hiddenFields.filter(function(f) { return f.group === "3LC Settings"; });
+  if (hiddenTlc.length > 0) {
+    var note = document.createElement("div");
+    note.className = "form-help";
+    note.style.marginTop = "8px";
+    note.textContent = "Not available for the " + detectedTask + " task: " +
+      hiddenTlc.map(function(f) { return f.label; }).join(", ") + ".";
+    tlcSection.appendChild(note);
   }
 
   _syncGtCheckbox();
