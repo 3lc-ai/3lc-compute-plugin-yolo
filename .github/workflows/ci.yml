@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
   push:
-    branches: [main]
+    branches: [main, "release/**"]
   workflow_call:
 
 concurrency:
@@ -31,3 +31,24 @@ jobs:
 
       - name: Ruff format check
         run: uvx --from 'ruff>=0.15,<0.16' ruff format --check .
+
+  # Release branches are cut from a tag, without a lockfile, and resolve from public PyPI.
+  # Base deps only; tests that need the [yolo] extra skip themselves (importorskip).
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.8.15"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run tests
+        run: uv run --with 'pytest>=8,<9' pytest -v
