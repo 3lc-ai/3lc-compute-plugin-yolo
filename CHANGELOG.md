@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-10-07
+
 ### Changed
 - The `[yolo]` extra requires `3lc-ultralytics>=0.5.1` (was `>=0.4.0`).
 
