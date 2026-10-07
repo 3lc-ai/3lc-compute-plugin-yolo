@@ -115,7 +115,7 @@ wheels = [
 
 [[package]]
 name = "3lc-compute-plugin-yolo"
-version = "0.2.6"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "3lc-compute-plugin-sdk" },
