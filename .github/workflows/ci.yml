@@ -52,3 +52,8 @@ jobs:
 
       - name: Run tests
         run: uv run --with 'pytest>=8,<9' pytest -v
+        # Same as main: `import tlc` needs a key, or it raises before importorskip can skip.
+        env:
+          TLC_API_KEY: ${{ secrets.TLC_API_KEY }}
+          ${{ secrets.DEFAULT_TESTING_RUNTIME_NAME }}: ${{ secrets.DEFAULT_TESTING_RUNTIME_VALUE }}
+          ${{ secrets.DEFAULT_TESTING_S_ENV_NAME }}: ${{ secrets.DEFAULT_TESTING_S_ENV_VALUE }}
