@@ -8,7 +8,7 @@ import contextlib
 import dataclasses
 import traceback
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Final
 
 import tlc
 from tlc_plugin_sdk.shared.url_utils import normalize_url
@@ -16,7 +16,7 @@ from tlc_ultralytics import YOLO
 from tlc_ultralytics.settings import Settings
 
 from tlc_plugin_yolo.models import register_model
-from tlc_plugin_yolo.models.base import BaseTrainingModel
+from tlc_plugin_yolo.models.base import BaseTrainingModel, unsupported_param_ids
 
 
 def _set_root_url(settings_kwargs: dict[str, Any], params: dict[str, Any]) -> None:
@@ -38,6 +38,30 @@ _TASK_MAP = {
     "pose": "pose",
     "obb": "obb",
 }
+
+# Tasks whose heads emit per-instance regions (boxes, masks, keypoints). Instance
+# embeddings are pooled from a detection-style head's feature map, so the classify
+# task cannot produce them — asking for them made the integration raise mid-run.
+# Fields tagged with this list are hidden by the fragment and dropped from the params
+# of a config that predates the tag (or arrived straight from the API).
+_INSTANCE_TASKS: Final[list[str]] = ["detection", "segmentation", "pose", "obb"]
+
+
+def _drop_unsupported(
+    fields: list[dict[str, Any]], params: dict[str, Any], task_type: str, on_status: Any
+) -> dict[str, Any]:
+    """Return ``params`` without the values whose field does not support ``task_type``.
+
+    The fragment already hides those fields, so this only fires for a config saved
+    before the field was tagged or a run body posted straight to the API — but it is
+    what keeps such a body from reaching a Settings combination the integration
+    rejects. A dropped key falls back to the disabled default its caller reads it with.
+    """
+    dropped = [pid for pid in unsupported_param_ids(fields, task_type) if pid in params]
+    if not dropped:
+        return params
+    on_status(f"Ignoring settings unsupported for the {task_type} task: {', '.join(dropped)}")
+    return {k: v for k, v in params.items() if k not in dropped}
 
 
 class YOLOModel(BaseTrainingModel):
@@ -313,6 +337,7 @@ class YOLOModel(BaseTrainingModel):
                 ],
                 "help": "Per-instance embedding dimensionality (per bounding box).",
                 "group": "3LC Settings",
+                "tasks": _INSTANCE_TASKS,
             },
             {
                 "id": "instance_embeddings_reducer",
@@ -326,6 +351,7 @@ class YOLOModel(BaseTrainingModel):
                 ],
                 "help": "Reduction algorithm for per-instance embeddings. PCA allows arbitrary output dimensions.",
                 "group": "3LC Settings",
+                "tasks": _INSTANCE_TASKS,
             },
             {
                 "id": "ground_truth_instance_embeddings",
@@ -334,6 +360,7 @@ class YOLOModel(BaseTrainingModel):
                 "default": True,
                 "help": "Collect instance embeddings for ground-truth annotations.",
                 "group": "3LC Settings",
+                "tasks": _INSTANCE_TASKS,
             },
         ]
 
@@ -342,6 +369,8 @@ class YOLOModel(BaseTrainingModel):
         on_epoch = callbacks.get("on_epoch", lambda *a: None)
         on_status = callbacks.get("on_status", lambda m: None)
         is_cancelled = callbacks.get("is_cancelled", lambda: False)
+
+        params = _drop_unsupported(self.get_params(), params, params.get("_task_type", ""), on_status)
 
         # ── YOLO args ──
         model_name = params.get("model", "yolov8n.pt")
@@ -624,6 +653,8 @@ class YOLOModel(BaseTrainingModel):
         on_status = callbacks.get("on_status", lambda m: None)
         on_epoch = callbacks.get("on_epoch", lambda *a: None)
         is_cancelled = callbacks.get("is_cancelled", lambda: False)
+
+        params = _drop_unsupported(self.get_params(), params, params.get("_task_type", ""), on_status)
 
         model_name = params.get("model", "yolov8n.pt")
         batch = int(params.get("batch", 16))
