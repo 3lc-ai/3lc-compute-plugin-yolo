@@ -11,9 +11,8 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Credentials for the explicit `poc` index in pyproject.toml (the SDK's only source).
 env:
-  UV_INDEX: poc=https://pypi.3lc.ai/repositories/prereleases/
-  UV_INDEX_STRATEGY: unsafe-first-match
   UV_INDEX_POC_USERNAME: ${{ secrets.CLOUDREPO_USERNAME }}
   UV_INDEX_POC_PASSWORD: ${{ secrets.CLOUDREPO_PASSWORD }}
 

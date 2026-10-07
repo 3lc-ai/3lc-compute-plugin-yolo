@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Require plugin SDK `>=0.5.0,<0.6.0` and lock the private POC build.
+- Only the SDK is resolved from private CloudRepo; `3lc` and every other dependency come from PyPI.
+- The `[yolo]` extra requires `3lc-ultralytics>=0.5.1` (was `>=0.4.0`).
 - Stamp and validate package and manifest versions together before publication.
 - Manual builds publish only to private CloudRepo when explicitly requested.
 

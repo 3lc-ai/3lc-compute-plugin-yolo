@@ -50,12 +50,11 @@ The plugin contract and author guide live in
 
 ## POC SDK and publishing
 
-During POC, SDK 0.5 is installed from private CloudRepo. Configure your shell before
-`uv sync --locked --group dev` (keep tokens out of source files):
+During POC, SDK 0.5 is installed from private CloudRepo — the explicit `poc` index in
+`pyproject.toml`, used for the SDK only. Set its credentials before `uv sync --locked --group dev`
+or `uv lock` (keep tokens out of source files):
 
 ```bash
-export UV_INDEX=poc=https://pypi.3lc.ai/repositories/prereleases/
-export UV_INDEX_STRATEGY=unsafe-first-match
 export UV_INDEX_POC_USERNAME="<CloudRepo username>"
 export UV_INDEX_POC_PASSWORD="<CloudRepo token>"
 ```

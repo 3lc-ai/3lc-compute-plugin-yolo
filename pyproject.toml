@@ -31,7 +31,7 @@ dependencies = [
 # plugin's LICENSE is AGPL-3.0.
 [project.optional-dependencies]
 yolo = [
-    "3lc-ultralytics>=0.4.0",
+    "3lc-ultralytics>=0.5.1",
     "torch",
     "torchvision",
     # Dimensionality reduction: the plugin materializes pacmap/umap-reduced tables in its OWN
@@ -58,10 +58,18 @@ name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
+# POC: SDK 0.5 builds live on private CloudRepo (credentials in README.md). Explicit, so ONLY
+# the SDK resolves from it — everything else, `3lc` included, stays on PyPI and no CloudRepo
+# build of another package can land in uv.lock.
+[[tool.uv.index]]
+name = "poc"
+url = "https://pypi.3lc.ai/repositories/prereleases/"
+explicit = true
+
 [tool.uv.sources]
 torch = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
 torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
-# POC SDK builds use the authenticated index documented in README.md.
+3lc-compute-plugin-sdk = { index = "poc" }
 
 # Ruff config mirrors 3lc-compute-plugin-sdk for a consistent house style. CI runs ruff standalone (uvx) —
 # linting must not require resolving the heavy ML stack.
