@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stamp and validate package and manifest versions together before publication.
 - Manual builds publish only to private CloudRepo when explicitly requested.
 
+## [0.2.7] - 2026-10-07
+
+### Changed
+- The `[yolo]` extra requires `3lc-ultralytics>=0.5.1` (was `>=0.4.0`).
+
+### Fixed
+- Classification tables no longer offer instance-embedding settings, which are only
+  meaningful for detection, segmentation, pose and OBB. Previously they were enabled by
+  default and the run failed partway through. Configs saved with these settings still run;
+  the run ignores those settings and reports that it did.
 
 ## [0.2.6] - 2026-09-11
 
