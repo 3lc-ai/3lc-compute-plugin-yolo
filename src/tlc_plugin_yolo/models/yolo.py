@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import traceback
 from pathlib import Path
 from typing import Any, ClassVar, Final
@@ -20,13 +19,12 @@ from tlc_plugin_yolo.models.base import BaseTrainingModel, unsupported_param_ids
 
 
 def _set_root_url(settings_kwargs: dict[str, Any], params: dict[str, Any]) -> None:
-    """Route the run (and any tables it creates) to the job's project root, when the integration can.
+    """Route the run (and any tables it creates) to the job's project root, as ``Settings.root_url``.
 
-    ``Settings.root_url`` arrives with a newer 3lc-ultralytics; an older one has no such field, and the
-    run then lands under the worker's configured root as before.
+    A job that carries no root leaves the field unset, and the run lands under the worker's configured root.
     """
     root = str(params.get("_project_root_url", "") or "").strip()
-    if root and "root_url" in {f.name for f in dataclasses.fields(Settings)}:
+    if root:
         settings_kwargs["root_url"] = root
 
 

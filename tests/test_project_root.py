@@ -1,6 +1,6 @@
 # Copyright 2026 3LC Inc.
 # SPDX-License-Identifier: Apache-2.0
-"""The run goes under the project root the job carries, when the installed 3lc-ultralytics can say so."""
+"""The run goes under the project root the job carries."""
 
 from __future__ import annotations
 
@@ -14,14 +14,8 @@ import pytest
 
 
 @dataclasses.dataclass
-class _OldSettings:
-    """3lc-ultralytics before ``Settings.root_url``."""
-
+class _Settings:
     project_name: str | None = None
-
-
-@dataclasses.dataclass
-class _NewSettings(_OldSettings):
     root_url: str | None = None
 
 
@@ -37,18 +31,11 @@ def _yolo_module(monkeypatch: pytest.MonkeyPatch, settings_cls: type) -> Any:
     return importlib.import_module("tlc_plugin_yolo.models.yolo")
 
 
-def test_a_newer_integration_gets_the_jobs_root(monkeypatch: pytest.MonkeyPatch) -> None:
-    yolo = _yolo_module(monkeypatch, _NewSettings)
+def test_the_run_gets_the_jobs_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    yolo = _yolo_module(monkeypatch, _Settings)
     kwargs: dict[str, Any] = {}
     yolo._set_root_url(kwargs, {"_project_root_url": "s3://bucket/root"})
     assert kwargs == {"root_url": "s3://bucket/root"}
     kwargs = {}
     yolo._set_root_url(kwargs, {})  # no root carried: the worker's configured root, as before
     assert kwargs == {}
-
-
-def test_an_older_integration_is_left_as_it_was(monkeypatch: pytest.MonkeyPatch) -> None:
-    yolo = _yolo_module(monkeypatch, _OldSettings)
-    kwargs: dict[str, Any] = {}
-    yolo._set_root_url(kwargs, {"_project_root_url": "s3://bucket/root"})
-    assert kwargs == {}  # Settings(root_url=...) would be a TypeError on this version
