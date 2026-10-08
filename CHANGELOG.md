@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it from the `staging` index.
 - CI runs on pull requests into, and pushes to, `config-service-poc` as well as `main`.
 - Training and collection runs go under the project root the job carries (`ctx.project_root_url`),
-  passed as `Settings.root_url` when the installed 3lc-ultralytics has that field; an older one keeps
-  writing under the worker's configured root.
+  passed as 3lc-ultralytics' `Settings.root_url` (present since 3lc-ultralytics 0.5.1, the `[yolo]`
+  extra's floor).
 - Require plugin SDK `>=0.5.0,<0.6.0` and lock the private POC build.
 - Resolve the plugin SDK from the explicit `staging` index declared in `pyproject.toml`; developers and CI
   need only `UV_INDEX_STAGING_USERNAME` / `UV_INDEX_STAGING_PASSWORD`.
