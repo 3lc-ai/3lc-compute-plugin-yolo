@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Manual builds publish only to private CloudRepo when explicitly requested.
 
 ### Fixed
+- **A train table that does not open fails the run before any weights download.** Training and
+  collection opened the tables only after `YOLO()` had loaded, and possibly downloaded, the model.
 - **A job on a worker with no models says why.** When model discovery failed, a run died with
   "Model 'yolov8' not found in registry" while the real cause sat in the worker's log — seen twice
   on one remote node: an API key refused by the production account service, then an unwritable
