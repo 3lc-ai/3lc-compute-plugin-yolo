@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The manifest declares the data a run reads.** `[runtime] data_inputs` names the train and val
+  table URLs and the pretrained checkpoint in the run body, so a Hub that plans data movement asks
+  where that data is for the chosen machine (this computer or a GPU node) before the run starts.
+
 ### Changed
 - Lock the staged 3lc 3.5.0.dev149866 and SDK 0.5.0.20261007121635.34.1; require the staged core
   directly (`3lc>=3.5.0.dev149866,<4.0.0`, also the floor of the `3lc[pacmap,umap]` extra) and resolve
