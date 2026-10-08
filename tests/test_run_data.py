@@ -24,3 +24,11 @@ def test_manifest_declares_the_run_body_data_inputs() -> None:
     ]
     assert "data_outputs" not in runtime
 
+
+def test_fragment_has_no_alias_override_card() -> None:
+    from tlc_plugin_yolo import YoloPlugin
+
+    html = YoloPlugin().get_ui_fragment()
+    for gone in ("_tlcFetchAndPopulateOverrides", "_tlcGetAliasOverrides", "alias-override-area"):
+        assert gone not in html
+    assert "_alias_overrides" not in (PACKAGE / "ui.html").read_text(encoding="utf-8")
