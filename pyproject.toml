@@ -6,7 +6,7 @@
 # or materialized from the installed distribution (shop/index/git). The heavy stack
 # (torch / 3lc-ultralytics) lives behind the `[yolo]` extra named
 # by the manifest's runtime.provision_extra and is installed ONLY into that provisioned venv —
-# never the host venv. Base `dependencies` is the SDK floor only.
+# never the host venv. Base `dependencies` is the SDK and core floors only.
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -20,9 +20,12 @@ requires-python = ">=3.10"
 # AGPL-3.0: this plugin links 3lc-ultralytics (Ultralytics YOLO, AGPL-3.0), so a distributed
 # work must itself be AGPL-3.0. Full text in ./LICENSE.
 license = "AGPL-3.0-only"
-# Base = the SDK floor ONLY. The heavy stack rides the [yolo] extra below and is installed only
+# Base = the SDK and core floors ONLY. The heavy stack rides the [yolo] extra below and is installed only
 # into the plugin's provisioned venv. The SDK brings the `tlc` data plane (`3lc[pandas]`).
+# The direct `3lc` floor names a staged pre-release on purpose: uv admits a pre-release only for a
+# direct requirement that names one. Relax it to a release floor once that core ships.
 dependencies = [
+    "3lc>=3.5.0.dev149866,<4.0.0",
     "3lc-compute-plugin-sdk>=0.5.0,<0.6.0",
 ]
 
@@ -38,7 +41,7 @@ yolo = [
     # provisioned venv, so it needs tlc's PacmapTable/UmapTable (pacmap / umap-learn / joblib /
     # scikit-learn). The SDK brings `3lc[pandas]`; unioned here that yields
     # `3lc[pandas,pacmap,umap]` in the venv. Mirrors the host's spec in 3lc-compute.
-    "3lc[pacmap,umap]>=3.3.0,<4.0.0",
+    "3lc[pacmap,umap]>=3.5.0.dev149866,<4.0.0",
 ]
 
 # Advertised for the optional installed-package / index-install discovery path. Value = the import
@@ -69,7 +72,8 @@ explicit = true
 [tool.uv.sources]
 torch = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
 torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
-# SDK 0.5 is not on PyPI yet; drop this line once it is.
+# The staged core and SDK 0.5 are not on PyPI yet; drop these lines once they are.
+"3lc" = { index = "staging" }
 3lc-compute-plugin-sdk = { index = "staging" }
 
 # Ruff config mirrors 3lc-compute-plugin-sdk for a consistent house style. CI runs ruff standalone (uvx) —

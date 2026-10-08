@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Lock the staged 3lc 3.5.0.dev149866 and SDK 0.5.0.20261007121635.34.1; require the staged core
+  directly (`3lc>=3.5.0.dev149866,<4.0.0`, also the floor of the `3lc[pacmap,umap]` extra) and resolve
+  it from the `staging` index.
+- CI runs on pull requests into, and pushes to, `config-service-poc` as well as `main`.
 - Training and collection runs go under the project root the job carries (`ctx.project_root_url`),
   passed as `Settings.root_url` when the installed 3lc-ultralytics has that field; an older one keeps
   writing under the worker's configured root.
