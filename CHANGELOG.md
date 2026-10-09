@@ -7,18 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Changed
+
+#### Data movement
+
 - **The manifest declares the data a run reads.** `[runtime] data_inputs` names the train and val
   table URLs and the pretrained checkpoint in the run body, so a Hub that plans data movement asks
   where that data is for the chosen machine (this computer or a GPU node) before the run starts.
-
-### Removed
 - **The "Read this data from somewhere else for this run" card.** It checked only the host's disk
   and saved an alias override with the config, which then applied to every later run of that config.
   The Hub's run dialog now asks where a table's data is when the target cannot find it, and the SDK
   worker applies the answer around the job. An override saved with an older config is ignored.
+- **A train table that does not open fails the run before any weights download.** Training and
+  collection opened the tables only after `YOLO()` had loaded, and possibly downloaded, the model.
 
-### Changed
+
+#### Other changes
 - Lock the staged 3lc 3.5.0.dev149866 and SDK 0.5.0.20261007121635.34.1; require the staged core
   directly (`3lc>=3.5.0.dev149866,<4.0.0`, also the floor of the `3lc[pacmap,umap]` extra) and resolve
   it from the `staging` index.
@@ -33,8 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Manual builds publish only to private CloudRepo when explicitly requested.
 
 ### Fixed
-- **A train table that does not open fails the run before any weights download.** Training and
-  collection opened the tables only after `YOLO()` had loaded, and possibly downloaded, the model.
+
 - **A job on a worker with no models says why.** When model discovery failed, a run died with
   "Model 'yolov8' not found in registry" while the real cause sat in the worker's log — seen twice
   on one remote node: an API key refused by the production account service, then an unwritable
