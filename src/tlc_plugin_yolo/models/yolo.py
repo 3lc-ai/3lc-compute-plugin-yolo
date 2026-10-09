@@ -17,6 +17,17 @@ from tlc_ultralytics.settings import Settings
 from tlc_plugin_yolo.models import register_model
 from tlc_plugin_yolo.models.base import BaseTrainingModel, unsupported_param_ids
 
+
+def _set_root_url(settings_kwargs: dict[str, Any], params: dict[str, Any]) -> None:
+    """Route the run (and any tables it creates) to the job's project root, as ``Settings.root_url``.
+
+    A job that carries no root leaves the field unset, and the run lands under the worker's configured root.
+    """
+    root = str(params.get("_project_root_url", "") or "").strip()
+    if root:
+        settings_kwargs["root_url"] = root
+
+
 # Map our task names to YOLO task names
 _TASK_MAP = {
     "detection": "detect",
@@ -445,8 +456,25 @@ class YOLOModel(BaseTrainingModel):
         if epoch_start and str(epoch_start).strip():
             settings_kwargs["collection_epoch_start"] = int(epoch_start)
 
+        _set_root_url(settings_kwargs, params)
         settings = Settings(**settings_kwargs)
         on_status(f"3LC Settings: {settings_kwargs}")
+
+        # Load 3LC tables before the model: YOLO() may download weights, and a table that does not
+        # open should fail the run at once rather than after that download.
+        on_status("Loading training table...")
+        train_table = tlc.Table.from_url(tables["train"])
+        val_table = None
+        skip_val = False
+        if tables.get("val"):
+            on_status("Loading validation table...")
+            val_table = tlc.Table.from_url(tables["val"])
+        else:
+            on_status("No validation table — training without validation (val=False).")
+            skip_val = True
+            val_table = train_table  # tlc_ultralytics requires val key, but val=False skips it
+
+        data: dict[str, Any] = {"train": train_table, "val": val_table}
 
         # Use pretrained model URL if provided (fine-tuning from existing checkpoint).
         # normalize_url expands a user-typed ``~`` (protocol URLs and alias tokens pass
@@ -469,21 +497,6 @@ class YOLOModel(BaseTrainingModel):
 
         on_status(f"Loading YOLO model: {model_name}")
         model = YOLO(model_name, task=yolo_task)
-
-        # Load 3LC tables
-        on_status("Loading training table...")
-        train_table = tlc.Table.from_url(tables["train"])
-        val_table = None
-        skip_val = False
-        if tables.get("val"):
-            on_status("Loading validation table...")
-            val_table = tlc.Table.from_url(tables["val"])
-        else:
-            on_status("No validation table — training without validation (val=False).")
-            skip_val = True
-            val_table = train_table  # tlc_ultralytics requires val key, but val=False skips it
-
-        data: dict[str, Any] = {"train": train_table, "val": val_table}
 
         # Epoch and batch callbacks for progress tracking and cancellation
         _state: dict[str, Any] = {"epoch": 0, "stop_logged": False, "tlc_run": None}
@@ -680,6 +693,7 @@ class YOLOModel(BaseTrainingModel):
         if instance_layer and str(instance_layer).strip():
             settings_kwargs["instance_embeddings_layer"] = int(instance_layer)
 
+        _set_root_url(settings_kwargs, params)
         settings = Settings(**settings_kwargs)
         on_status(f"3LC Settings: {settings_kwargs}")
 
@@ -689,6 +703,18 @@ class YOLOModel(BaseTrainingModel):
                 tlc.close()
         except Exception:
             pass
+
+        # Load the tables before the model (YOLO() may download weights): see train().
+        on_status("Loading training table...")
+        train_table = tlc.Table.from_url(tables["train"])
+        val_table = None
+        skip_val = False
+        if tables.get("val"):
+            on_status("Loading validation table...")
+            val_table = tlc.Table.from_url(tables["val"])
+        else:
+            on_status("No validation table — collecting on train set only.")
+            skip_val = True
 
         # Use pretrained model URL if provided
         pretrained_url = params.get("pretrained_model_url", "").strip()
@@ -705,17 +731,6 @@ class YOLOModel(BaseTrainingModel):
 
         on_status(f"Loading YOLO model: {model_name}")
         model = YOLO(model_name, task=yolo_task)
-
-        on_status("Loading training table...")
-        train_table = tlc.Table.from_url(tables["train"])
-        val_table = None
-        skip_val = False
-        if tables.get("val"):
-            on_status("Loading validation table...")
-            val_table = tlc.Table.from_url(tables["val"])
-        else:
-            on_status("No validation table — collecting on train set only.")
-            skip_val = True
 
         data: dict[str, Any]
         if skip_val:
