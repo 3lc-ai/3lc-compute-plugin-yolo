@@ -159,9 +159,6 @@
           </label>
         </div>
 
-        <!-- Alias Override -->
-        <div id="tr-alias-override-area"></div>
-
         <!-- Detected Task -->
         <div class="form-group">
           <label class="form-label">Detected Task</label>
@@ -678,12 +675,6 @@ function trLoadProject(projectId) {
       document.getElementById("tr-save-new-btn").style.display = "";
       document.getElementById("tr-delete-btn").style.display = "";
 
-      // Fetch alias overrides for loaded config's train URL
-      if (p.train_table_url) {
-        _tlcFetchAndPopulateOverrides("tr", p.train_table_url,
-          (p.params || {})._alias_overrides || null);
-      }
-
       setTimeout(function() { trTakeSnapshot(); trCheckDirty(); }, 100);
       trLoadProjects();
     })
@@ -723,10 +714,6 @@ function trCollectFormData() {
     var tlcEl = tlcEls[j];
     params[tlcEl.dataset.paramId] = tlcEl.type === "checkbox" ? tlcEl.checked : tlcEl.value;
   }
-
-  // Store alias overrides inside params (so they persist with the config)
-  var _trAliasOv = _tlcGetAliasOverrides("tr");
-  if (_trAliasOv.enabled && _trAliasOv.overrides.length) params._alias_overrides = _trAliasOv;
 
   // Model fine-tuning and checkpoint params
   var pretrainedUrl = document.getElementById("tr-pretrained-url").value.trim();
@@ -1657,25 +1644,6 @@ function trSwapUrls() {
     mode: "file",
   });
   _tlcBindDataSource("tr-pretrained-url", COMPUTE_URL, "yolo", { accept: "*.pt,*.pth", mode: "file" });
-})();
-
-// ── Alias Override Init ───────────────────────────────────────
-(function() {
-  document.getElementById("tr-alias-override-area").innerHTML =
-    _tlcAliasOverrideHtml("tr");
-  _tlcBindAliasOverrideToggle("tr");
-
-  // Fetch aliases when train table URL changes
-  var _trAliasDebounce = null;
-  var _origTrainChange = window.trOnTrainTableChange;
-  window.trOnTrainTableChange = function() {
-    _origTrainChange();
-    clearTimeout(_trAliasDebounce);
-    _trAliasDebounce = setTimeout(function() {
-      var url = document.getElementById("tr-train-url").value.trim();
-      _tlcFetchAndPopulateOverrides("tr", url);
-    }, 500);
-  };
 })();
 
 // ── Init ─────────────────────────────────────────────────────

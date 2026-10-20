@@ -73,13 +73,12 @@ class YoloPlugin(ComputePlugin):
     def get_ui_fragment(self) -> str:
         """Return the self-contained YOLO UI HTML+JS+CSS fragment."""
         if self._ui_cache is None:
-            from tlc_plugin_sdk.shared.alias_override_ui import alias_override_ui_script
             from tlc_plugin_sdk.shared.data_source_ui import data_source_ui_script
             from tlc_plugin_sdk.shared.ui_inject import inject_scripts
 
             ui_path = Path(__file__).resolve().parent / "ui.html"
             raw = ui_path.read_text(encoding="utf-8")
-            self._ui_cache = inject_scripts(raw, data_source_ui_script(), alias_override_ui_script())
+            self._ui_cache = inject_scripts(raw, data_source_ui_script())
         return self._ui_cache
 
     def compute(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -93,9 +92,9 @@ class YoloPlugin(ComputePlugin):
         ``project_id`` which is resolved against the ProjectStore to the frozen
         training config, the model is looked up in ``MODEL_REGISTRY`` by
         ``project.model_name``, ``.latest()`` table URLs are resolved when requested,
-        the 3LC project name is derived from the table when unset, alias overrides
-        are applied (and restored), and train-vs-collect is selected by the project's
-        ``mode``.
+        the 3LC project name is derived from the table when unset, and train-vs-collect
+        is selected by the project's ``mode``. Alias overrides are the SDK worker's: it
+        applies the host's ``_alias_overrides`` around this call.
 
         Driven entirely by ``ctx``: ``ctx.progress`` / ``ctx.log`` feed the generic
         Queue & Progress panel (percent + label only — no training-specific fields),
@@ -117,7 +116,7 @@ class YoloPlugin(ComputePlugin):
 
         from tlc_plugin_sdk.shared.generic_job import epoch_progress
 
-        from tlc_plugin_yolo.models import MODEL_REGISTRY
+        from tlc_plugin_yolo.models import MODEL_REGISTRY, ensure_discovered, registry_failure_message
         from tlc_plugin_yolo.runtime import get_store
 
         params_in = ctx.params
@@ -134,10 +133,12 @@ class YoloPlugin(ComputePlugin):
         if project is None:
             ctx.fail("Project not found" if project_id else "project_id is required")
 
-        # Look up the model in the registry (populated by discover_models()).
+        # Look up the model in the registry (populated by discover_models()). An empty registry
+        # is a discovery failure, and the job says why rather than "not found".
+        ensure_discovered()
         model = MODEL_REGISTRY.get(project.model_name)
         if model is None:
-            ctx.fail(f"Model '{project.model_name}' not found in registry")
+            ctx.fail(registry_failure_message(project.model_name))
 
         mode = project.mode or "train"
         mode_label = "Collection" if mode == "collect" else "Training"
@@ -181,6 +182,9 @@ class YoloPlugin(ComputePlugin):
             params["_run_name"] = project.run_name
         if project.task_type:
             params["_task_type"] = project.task_type
+        root = ctx.project_root_url
+        if root:
+            params["_project_root_url"] = root
 
         # ── Timing bookkeeping (lifted from the old runner) ──
         _last_metrics: dict[str, Any] = {}
@@ -291,58 +295,48 @@ class YoloPlugin(ComputePlugin):
             "is_cancelled": is_cancelled,
         }
 
-        # Apply alias overrides if requested (restored in finally).
-        alias_originals: list[dict[str, str]] = []
-        alias_ov = params.pop("_alias_overrides", None)
-        if isinstance(alias_ov, dict) and alias_ov.get("enabled") and alias_ov.get("overrides"):
-            from tlc_plugin_sdk.shared.aliases import apply_alias_overrides
+        # Where this run reads an alias's data is the host's decision: it stamps
+        # ``_alias_overrides`` at the top of the run body and the SDK worker applies it around
+        # run_job. The copy the host mirrors into the inline config's params (and one an older
+        # fragment saved with a config) is dropped here, so it never reaches the trainer.
+        params.pop("_alias_overrides", None)
 
-            alias_originals = apply_alias_overrides(alias_ov["overrides"])
-            if alias_originals:
-                ctx.log(f"Applied {len(alias_originals)} alias override(s)")
+        model_fn = model.collect if mode == "collect" else model.train
+        result = model_fn(tables, params, callbacks)
 
-        try:
-            model_fn = model.collect if mode == "collect" else model.train
-            result = model_fn(tables, params, callbacks)
+        run_url = result.get("run_url") or _run_state["run_url"]
 
-            run_url = result.get("run_url") or _run_state["run_url"]
-
-            if ctx.cancelled:
-                # Set the 3LC run status to cancelled — use the tlc_run captured during
-                # on_train_start, which survives even when model.train() throws.
-                tlc_run = result.get("tlc_run")
-                if tlc_run is not None:
-                    try:
-                        logger.info("Setting 3LC run status to cancelled via tlc_run")
-                        tlc_run.set_status_cancelled()
-                        if not run_url and hasattr(tlc_run, "url"):
-                            run_url = str(tlc_run.url)
-                        logger.info("3LC run status set to cancelled successfully")
-                    except Exception as exc:
-                        logger.error("Failed to set 3LC run status to cancelled: %s", exc)
-                else:
-                    logger.warning("No tlc_run object available to set cancelled status")
-                ctx.emit("job_status", {"job_id": ctx.job_id, "status": "cancelled", "message": "Job stopped by user"})
+        if ctx.cancelled:
+            # Set the 3LC run status to cancelled — use the tlc_run captured during
+            # on_train_start, which survives even when model.train() throws.
+            tlc_run = result.get("tlc_run")
+            if tlc_run is not None:
+                try:
+                    logger.info("Setting 3LC run status to cancelled via tlc_run")
+                    tlc_run.set_status_cancelled()
+                    if not run_url and hasattr(tlc_run, "url"):
+                        run_url = str(tlc_run.url)
+                    logger.info("3LC run status set to cancelled successfully")
+                except Exception as exc:
+                    logger.error("Failed to set 3LC run status to cancelled: %s", exc)
             else:
-                # Generic surface stays percent + label only — the per-epoch metrics
-                # ride the plugin-specific epoch_progress event, never ctx.metric.
-                ctx.progress(percent=100.0, label="Done")
-                if store:
-                    # Best-effort: on a remote worker the store exists but is empty (the
-                    # config arrived inline) — bookkeeping must not fail the finished job.
-                    with contextlib.suppress(Exception):
-                        store.update_last_run(project.id)
+                logger.warning("No tlc_run object available to set cancelled status")
+            ctx.emit("job_status", {"job_id": ctx.job_id, "status": "cancelled", "message": "Job stopped by user"})
+        else:
+            # Generic surface stays percent + label only — the per-epoch metrics
+            # ride the plugin-specific epoch_progress event, never ctx.metric.
+            ctx.progress(percent=100.0, label="Done")
+            if store:
+                # Best-effort: on a remote worker the store exists but is empty (the
+                # config arrived inline) — bookkeeping must not fail the finished job.
+                with contextlib.suppress(Exception):
+                    store.update_last_run(project.id)
 
-            # The run link is the job's result (the Queue's Open button). Usually
-            # already published from on_status; re-publish the final value in case
-            # the model reported a different / later URL (last write wins).
-            if run_url:
-                ctx.result(str(run_url))
-        finally:
-            if alias_originals:
-                from tlc_plugin_sdk.shared.aliases import restore_aliases
-
-                restore_aliases(alias_originals)
+        # The run link is the job's result (the Queue's Open button). Usually
+        # already published from on_status; re-publish the final value in case
+        # the model reported a different / later URL (last write wins).
+        if run_url:
+            ctx.result(str(run_url))
 
     def get_route_handlers(self) -> list[Any]:
         """Serve YOLO's custom routes as relative Litestar handlers (host + venv).

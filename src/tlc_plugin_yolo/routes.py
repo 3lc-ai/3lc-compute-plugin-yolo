@@ -66,15 +66,7 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         from tlc_plugin_yolo import models as models_pkg
 
         error = models_pkg.DISCOVERY_ERROR
-        hint = ""
-        if "libGL" in error or "libgthread" in error or "libglib" in error:
-            hint = (
-                "OpenCV needs system libraries this machine lacks: "
-                "install libgl1 and libglib2.0-0, then reload the plugin."
-            )
-        elif "tlc_ultralytics" in error or "ultralytics" in error:
-            hint = "The [yolo] extra is not installed in this plugin's environment: reinstall the plugin with it."
-        return {"count": len(MODEL_REGISTRY), "error": error, "hint": hint}
+        return {"count": len(MODEL_REGISTRY), "error": error, "hint": models_pkg.discovery_hint(error)}
 
     # get_params() is model-defined (list or dict, heterogeneous by model) → Any body.
     @get("/models/{name:str}/params", sync_to_thread=True)

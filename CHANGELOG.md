@@ -8,9 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+
+#### Data movement
+
+- **The manifest declares the data a run reads.** `[runtime] data_inputs` names the train and val
+  table URLs and the pretrained checkpoint in the run body, so a Hub that plans data movement asks
+  where that data is for the chosen machine (this computer or a GPU node) before the run starts.
+- **The "Read this data from somewhere else for this run" card.** It checked only the host's disk
+  and saved an alias override with the config, which then applied to every later run of that config.
+  The Hub's run dialog now asks where a table's data is when the target cannot find it, and the SDK
+  worker applies the answer around the job. An override saved with an older config is ignored.
+- **A train table that does not open fails the run before any weights download.** Training and
+  collection opened the tables only after `YOLO()` had loaded, and possibly downloaded, the model.
+
+
+#### Other changes
+- Lock the staged 3lc 3.5.0.dev149866 and SDK 0.5.0.20261007121635.34.1; require the staged core
+  directly (`3lc>=3.5.0.dev149866,<4.0.0`, also the floor of the `3lc[pacmap,umap]` extra) and resolve
+  it from the `staging` index.
+- CI runs on pull requests into, and pushes to, `config-service-poc` as well as `main`.
+- Training and collection runs go under the project root the job carries (`ctx.project_root_url`),
+  passed as 3lc-ultralytics' `Settings.root_url` (present since 3lc-ultralytics 0.5.1, the `[yolo]`
+  extra's floor).
 - Require plugin SDK `>=0.5.0,<0.6.0` and lock the private POC build.
+- Resolve the plugin SDK from the explicit `staging` index declared in `pyproject.toml`; developers and CI
+  need only `UV_INDEX_STAGING_USERNAME` / `UV_INDEX_STAGING_PASSWORD`.
 - Stamp and validate package and manifest versions together before publication.
 - Manual builds publish only to private CloudRepo when explicitly requested.
+
+### Fixed
+
+- **A job on a worker with no models says why.** When model discovery failed, a run died with
+  "Model 'yolov8' not found in registry" while the real cause sat in the worker's log — seen twice
+  on one remote node: an API key refused by the production account service, then an unwritable
+  project root. The job failure now carries the discovery error and a hint for the known causes,
+  discovery is retried once before giving up, and the models status route shares the same hints.
 
 ## [0.2.7] - 2026-10-07
 

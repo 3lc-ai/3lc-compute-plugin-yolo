@@ -31,3 +31,11 @@ entrypoint = "tlc_plugin_yolo:YoloPlugin"
 provision_extra = "yolo"
 requires_gpu = true
 training = true
+# Dotted keys into the run body naming the data a run reads, so the Hub can ask where that data
+# is for the chosen machine before the run starts. The tables bring their own aliases; the
+# pretrained checkpoint is a file or URL the host may rewrite to a copy for this run only.
+data_inputs = [
+    "project_config.train_table_url",
+    "project_config.val_table_url",
+    "project_config.params.pretrained_model_url",
+]
