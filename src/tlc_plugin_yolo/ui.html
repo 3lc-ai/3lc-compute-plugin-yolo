@@ -719,12 +719,13 @@ function trPopulateModelDropdown(taskType, onReady, wanted) {
       }
     });
 
-    // Restore previous selection, or auto-select if exactly one match
+    // Restore previous selection, or auto-select if exactly one match. A caller with onReady
+    // loads the parameters itself, once; a second load here would re-render them after it.
     if (prev && compatible.indexOf(prev) !== -1) {
       select.value = prev;
     } else if (compatible.length === 1) {
       select.value = compatible[0];
-      trOnModelChange();
+      if (!onReady) trOnModelChange();
     }
     trExplainEmptyModels(models.length === 0);
 
@@ -773,6 +774,7 @@ function trLoadModelParams(modelName, savedValues) {
     var fields = modelParamsCache[modelName];
     if (!fields) return;
     trRenderParamFields(fields, savedValues);
+    trScheduleAutoSave();  // the form is whole again: the preset bar compares it now, not mid-render
   };
 
   if (modelParamsCache[modelName]) {
