@@ -128,12 +128,8 @@
         <!-- Tables -->
         <div class="form-group">
           <label class="form-label" for="tr-train-url">Train Table URL</label>
-          <div style="display:flex;gap:6px">
-            <input type="text" id="tr-train-url" class="form-control plugin-mono"
-                   placeholder="Paste URL or click Browse..."
-                   oninput="trOnTrainTableChange()">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="openTablePicker('tr-train-url')">Browse</button>
-          </div>
+          <tlc-table-field id="tr-train-url" placeholder="Paste URL or click Browse…"
+                           oninput="trOnTrainTableChange()"></tlc-table-field>
           <div class="form-help">Select your training data table. The task type (detection, segmentation, classification) is auto-detected from the table schema.</div>
           <div id="tr-run-target-data-note" class="form-help" style="display:none"></div>
         </div>
@@ -143,11 +139,7 @@
         </div>
         <div class="form-group">
           <label class="form-label" for="tr-val-url">Validation Table URL <span class="text-muted">(optional — validation skipped if empty)</span></label>
-          <div style="display:flex;gap:6px">
-            <input type="text" id="tr-val-url" class="form-control plugin-mono"
-                   placeholder="Paste URL or click Browse...">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="openTablePicker('tr-val-url')">Browse</button>
-          </div>
+          <tlc-table-field id="tr-val-url" placeholder="Paste URL or click Browse…"></tlc-table-field>
           <div class="form-help">Optional validation set for tracking metrics during training. If empty, validation is skipped (val=False).</div>
         </div>
 

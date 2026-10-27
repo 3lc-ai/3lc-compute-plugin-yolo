@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 #### Other changes
+- **The train and validation table fields are the Hub's table fields (`<tlc-table-field>`).**
+  Browse…, or a double-click in an empty field, opens Browse Tables. It opens at the table the field
+  holds and tags the table the other field holds ("Train Table"), so picking validation starts where
+  train is. The plugin now needs Hub 1.2.0 (`min_frontend_version`); an older Hub shows it disabled
+  with an update badge.
 - Lock the staged 3lc 3.5.0.dev149866 and SDK 0.5.0.20261007121635.34.1; require the staged core
   directly (`3lc>=3.5.0.dev149866,<4.0.0`, also the floor of the `3lc[pacmap,umap]` extra) and resolve
   it from the `staging` index.
