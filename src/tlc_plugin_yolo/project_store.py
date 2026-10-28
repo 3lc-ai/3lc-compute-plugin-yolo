@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -86,7 +86,7 @@ class ProjectStore:
         if not project.id:
             project.id = str(uuid.uuid4())
         if not project.created:
-            project.created = datetime.now(timezone.utc).isoformat()
+            project.created = datetime.now(UTC).isoformat()
         with open(self._path(project.id), "w") as f:
             json.dump(asdict(project), f, indent=2)
         return project
@@ -103,5 +103,5 @@ class ProjectStore:
         """Update last_run timestamp on a project."""
         project = self.get_project(project_id)
         if project:
-            project.last_run = datetime.now(timezone.utc).isoformat()
+            project.last_run = datetime.now(UTC).isoformat()
             self.save_project(project)
