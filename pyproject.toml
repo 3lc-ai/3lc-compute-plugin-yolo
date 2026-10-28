@@ -16,7 +16,7 @@ name = "3lc-compute-plugin-yolo"
 version = "0.3.0"
 description = "Ultralytics YOLO training plugin for the 3LC compute service."
 readme = "README-wheel.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 # AGPL-3.0: this plugin links 3lc-ultralytics (Ultralytics YOLO, AGPL-3.0), so a distributed
 # work must itself be AGPL-3.0. Full text in ./LICENSE.
 license = "AGPL-3.0-only"
@@ -80,7 +80,7 @@ torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sy
 # linting must not require resolving the heavy ML stack.
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 exclude = [".git", ".mypy_cache", ".ruff_cache", ".venv", "build", "dist"]
 
 [tool.ruff.lint]
