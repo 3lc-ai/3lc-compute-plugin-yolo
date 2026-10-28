@@ -527,7 +527,7 @@ function trAutoName(values) {
 
 // What the list shows after a preset's name: "yolo11n · detect".
 function trPresetSummary(values) {
-  return trModelLabel(values) + " \u00b7 " + (values.task_type || values.mode || "train");
+  return [values.model_name ? trModelLabel(values) : "", values.task_type || values.mode];
 }
 
 function trShowTask(badge, detail) {

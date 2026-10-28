@@ -72,7 +72,17 @@ class ProjectStore:
             return None
 
     def save_project(self, project: TrainingProject) -> TrainingProject:
-        """Save a project (creates new id if empty)."""
+        """Save a project (creates new id if empty).
+
+        A save of a stored id that leaves ``created`` empty or ``last_run`` unset keeps the stored
+        values: a page that does not send them back must not make an old preset look new or unused.
+        """
+        if project.id:
+            stored = self.get_project(project.id)
+            if stored is not None:
+                project.created = project.created or stored.created
+                if project.last_run is None:
+                    project.last_run = stored.last_run
         if not project.id:
             project.id = str(uuid.uuid4())
         if not project.created:
