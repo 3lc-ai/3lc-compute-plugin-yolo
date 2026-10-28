@@ -336,8 +336,25 @@ var _STORAGE_KEY = "yolo_selected_project";
 var COMPUTE_URL = PLUGIN_API.getConfig("compute_service_url");
 
 // ── Helpers ───────────────────────────────────────────────────
+// The YOLO worker can be cold: Compute starts it on first use and again once it has been idle for
+// a few minutes, and it then imports tlc and reads the table. That can take longer than authFetch's
+// default 10 s, which aborted the call with "AbortError: signal is aborted without reason". Worker
+// calls get a minute; a call that sets its own timeout keeps it.
+var _TR_WORKER_TIMEOUT_MS = 60000;
+
 function _trFetch(path, opts) {
+  opts = opts || {};
+  if (opts.timeout === undefined) opts.timeout = _TR_WORKER_TIMEOUT_MS;
   return PLUGIN_API.authFetch(COMPUTE_URL + path, opts);
+}
+
+// A failed worker call in words. A timeout says how long it waited, not the browser's AbortError.
+function _trErrorText(e) {
+  if (e && (e.name === "AbortError" || e.name === "TimeoutError")) {
+    return "The YOLO worker did not answer within " + Math.round(_TR_WORKER_TIMEOUT_MS / 1000) +
+      " s. Choose the train table again to retry.";
+  }
+  return String((e && e.message) || e || "Unknown error");
 }
 
 function _trFetchJson(path, opts) {
@@ -814,7 +831,7 @@ function trOnTrainTableChange() {
       })
       .catch(function(e) {
         document.getElementById("tr-task-badge").textContent = "error";
-        document.getElementById("tr-task-detail").textContent = String(e);
+        document.getElementById("tr-task-detail").textContent = _trErrorText(e);
       });
   }, 500);
 }
