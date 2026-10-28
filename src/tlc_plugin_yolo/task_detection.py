@@ -19,7 +19,8 @@ def detect_task(table_url: str) -> dict[str, Any]:
         table_url: URL of the 3LC table to inspect.
 
     Returns:
-        Dict with task, models, details, and project_name.
+        Dict with task, models, details, and project_name; also ``error`` when the table cannot be
+        read, so the UI can keep Start disabled and say why.
 
     """
     try:
@@ -35,6 +36,7 @@ def detect_task(table_url: str) -> dict[str, Any]:
             "task": "unknown",
             "models": _models_for_task("unknown"),
             "details": f"Could not load table: {e}",
+            "error": f"Could not load table: {e}",
             "project_name": "",
         }
 

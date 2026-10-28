@@ -97,14 +97,16 @@
 
         <!-- Tables -->
         <div class="form-group">
-          <label class="form-label" for="tr-train-url">Train Table URL</label>
-          <tlc-table-field id="tr-train-url" placeholder="Paste URL or click Browse…"
+          <!-- The Hub's required style: a red * on the label, a red wash while the field is empty. -->
+          <label class="form-label required" for="tr-train-url">Train Table URL</label>
+          <tlc-table-field id="tr-train-url" placeholder="Paste URL or click Browse…" required
                            oninput="trOnTrainTableChange()"></tlc-table-field>
           <div class="form-help">Select your training data table. The task type (detection, segmentation, classification) is auto-detected from the table schema.</div>
           <div id="tr-run-target-data-note" class="form-help" style="display:none"></div>
         </div>
         <div style="display:flex;justify-content:center">
-          <button type="button" class="btn btn-ghost btn-sm" onclick="trSwapUrls()" title="Swap train / val URLs"
+          <button type="button" class="btn btn-ghost btn-sm" id="tr-swap-btn" onclick="trSwapUrls()"
+                  title="Swap train / val URLs" data-title="Swap train / val URLs"
                   style="font-size:13px;padding:1px 6px;line-height:1">&#x21C5;</button>
         </div>
         <div class="form-group">
@@ -142,8 +144,8 @@
         <!-- Model + Mode — side by side -->
         <div class="plugin-form-grid">
           <div class="form-group">
-            <label class="form-label" for="tr-model-select">Model</label>
-            <select id="tr-model-select" class="form-select" onchange="trOnModelChange()">
+            <label class="form-label required" for="tr-model-select">Model</label>
+            <select id="tr-model-select" class="form-select" onchange="trOnModelChange()" required>
               <option value="">-- Select a model --</option>
             </select>
             <div class="form-help">Choose a YOLO model size. Larger models are more accurate but slower to train. Nano (n) is great for testing.</div>
@@ -212,8 +214,11 @@
 
         <!-- Actions -->
         <div class="plugin-action-bar">
-          <button class="btn btn-primary" id="tr-train-btn" onclick="trStartTraining()">Start Ultralytics YOLO Training</button>
+          <button class="btn btn-primary" id="tr-train-btn" onclick="trStartTraining()"
+                  aria-describedby="tr-train-why">Start Ultralytics YOLO Training</button>
         </div>
+        <!-- Why Start cannot run yet (trGate). Always one line high, so the page does not move as it comes and goes. -->
+        <div class="text-sm text-muted" id="tr-train-why" style="margin-top:6px;line-height:1.5;min-height:1.5em"></div>
       </div>
     </div>
 
@@ -286,6 +291,10 @@ var detectedTask = null;
 var _currentJobId = null;
 var currentMode = "train";    // "train" or "collect"
 var trPresets = null;         // the SDK's preset bar (_tlcPluginPresets), once mounted
+var trDetecting = false;      // the train table is being read (from the change, through the debounce)
+var trTaskError = "";         // why the train table could not be read; "" when it was, or is not yet
+var trModelsState = "loading"; // the model list: "loading", "ready" or "failed"
+var _trSubmitting = false;    // Start was pressed and the run request has not answered yet
 
 var _STORAGE_KEY = "yolo_selected_project";  // the old config bar's key; the preset bar honours it once
 
@@ -451,9 +460,49 @@ function trLog(msg) {
 // ── Save bar (dirty tracking) ───────────────────────────────
 // ── Presets ──────────────────────────────────────────────────
 // The SDK's preset bar owns the saved setups (SDK guide → Presets). The form's handlers call this
-// after a change the page's input/change events do not carry, so the bar can compare the form.
+// after a change the page's input/change events do not carry, so the bar can compare the form and
+// Start follows it.
 function trScheduleAutoSave() {
   if (trPresets) trPresets.changed();
+  trGate();
+}
+
+// ── Start: disabled until it can run, saying why (PBI 19074) ──
+// Start's label follows the mode; the reasons name it as the button shows it.
+function trStartLabel() {
+  return currentMode === "collect" ? "Start Collection" : "Start Ultralytics YOLO Training";
+}
+
+// A table field's URL, trimmed.
+function trTableUrl(id) {
+  return String(document.getElementById(id).value || "").trim();
+}
+
+// Why Start cannot run yet, as what to do to enable it; "" when it can.
+function trStartBlocker() {
+  var label = trStartLabel();
+  if (!trTableUrl("tr-train-url")) return "Choose a train table to enable " + label + ".";
+  if (trDetecting) return "Wait while the train table is read to enable " + label + ".";
+  if (trTaskError) return "Choose another train table to enable " + label + ": this one could not be read.";
+  if (trModelsState === "loading") return "Wait while the models load to enable " + label + ".";
+  if (!modelsCache || !modelsCache.length) return "Fix the problem shown under Model to enable " + label + ".";
+  if (!document.getElementById("tr-model-select").value) return "Choose a model to enable " + label + ".";
+  if (typeof PluginJobs === "undefined") return "Reload the page to enable " + label + ".";
+  return "";
+}
+
+// Start, disabled while it cannot run, with the reason in its tooltip and on the line under it;
+// Swap, disabled while both table fields are empty, with the reason in its tooltip.
+function trGate() {
+  var btn = document.getElementById("tr-train-btn");
+  var reason = trStartBlocker();
+  btn.disabled = _trSubmitting || !!reason;
+  btn.title = reason;
+  document.getElementById("tr-train-why").textContent = reason;  // the line keeps its height when empty
+  var swap = document.getElementById("tr-swap-btn");
+  var noTables = !trTableUrl("tr-train-url") && !trTableUrl("tr-val-url");
+  swap.disabled = noTables;
+  swap.title = noTables ? "Nothing to swap: both table fields are empty." : swap.dataset.title;
 }
 
 // ── Mode Toggle ─────────────────────────────────────────────
@@ -468,13 +517,12 @@ function trSetMode(mode) {
     trainBtn.className = "btn btn-sm btn-secondary";
     collectBtn.className = "btn btn-sm btn-primary";
     helpEl.textContent = "Collect metrics on an existing Ultralytics YOLO model (no training).";
-    startBtn.textContent = "Start Collection";
   } else {
     trainBtn.className = "btn btn-sm btn-primary";
     collectBtn.className = "btn btn-sm btn-secondary";
     helpEl.textContent = "Train a model with 3LC metrics collection.";
-    startBtn.textContent = "Start Ultralytics YOLO Training";
   }
+  startBtn.textContent = trStartLabel();
 
   trApplyModeVisibility();
   trScheduleAutoSave();
@@ -548,13 +596,15 @@ function trApplyFormData(values) {
   document.getElementById("tr-pretrained-url").value = params.pretrained_model_url || "";
   document.getElementById("tr-copy-model").checked = params.copy_model_to_run !== false;
   document.getElementById("tr-workers").value = params.workers != null ? params.workers : 8;
+  detectedTask = values.task_type || null;
+  trTaskError = "";
+  trDetecting = !!document.getElementById("tr-train-url").value.trim();
   trSetMode(values.mode || "train");
   trCheckTableAgainstRunTarget();
-  detectedTask = values.task_type || null;
   trShowTask(detectedTask || "--", "");
   var model = values.model_name || "";
   // The train table decides the task, and the 3LC project when none is set; the preset's own task
-  // stands while the table cannot be read.
+  // stands while the table cannot be read (Start then says so).
   var detect = document.getElementById("tr-train-url").value.trim() ? trDetectTask() : Promise.resolve(false);
   return detect.then(function() {
     return new Promise(function(resolve) {
@@ -563,7 +613,7 @@ function trApplyFormData(values) {
         resolve(trLoadModelParams(chosen, chosen === model ? params : {}));
       }, model);
     });
-  });
+  }).then(trGate);
 }
 
 function trInitPresets() {
@@ -647,6 +697,13 @@ if (window.PLUGIN_API && typeof PLUGIN_API.onRunTargetChange === "function") {
 }
 
 function trOnTrainTableChange() {
+  // Another table: its task is unknown until detection answers, and the previous table's must not
+  // ride along in a run. Start waits for the answer, debounce included.
+  var url = document.getElementById("tr-train-url").value.trim();
+  detectedTask = null;
+  trTaskError = "";
+  trDetecting = !!url;
+  trShowTask(url ? "detecting..." : "--", "");
   trScheduleAutoSave();
   trCheckTableAgainstRunTarget();
   clearTimeout(_detectDebounce);
@@ -662,44 +719,62 @@ function trOnTrainTableChange() {
 }
 
 // Detect the task from the train table; resolves true when it answered. Fills the 3LC project when
-// none is set.
+// none is set. A table that cannot be read leaves detectedTask as it is and sets trTaskError.
 function trDetectTask() {
   var url = document.getElementById("tr-train-url").value.trim();
+  trTaskError = "";
   if (!url) {
     detectedTask = null;
+    trDetecting = false;
     trShowTask("--", "");
+    trGate();
     return Promise.resolve(false);
   }
+  trDetecting = true;
   trShowTask("detecting...", "");
+  trGate();
+  // An answer for a table no longer in the field is dropped: that field's own detection answers.
+  var current = function() { return document.getElementById("tr-train-url").value.trim() === url; };
+  var failed = function(error) {
+    trDetecting = false;
+    trTaskError = error;
+    trShowTask("error", error);
+    trGate();
+    return false;
+  };
   return _trPost("/api/plugins/yolo/detect-task", { url: url })
     .then(function(data) {
-      if (data.error) {
-        trShowTask("error", data.error);
-        return false;
+      if (!current()) return false;
+      if (!data || data.error || !data.task) {
+        return failed(String((data && (data.error || data.detail)) || "No task in the answer."));
       }
+      trDetecting = false;
       detectedTask = data.task;
       trShowTask(data.task, data.details || "");
       var projInput = document.getElementById("tr-3lc-project");
       if (data.project_name && !projInput.value.trim()) {
         projInput.value = data.project_name;
       }
+      trGate();
       return true;
     })
     .catch(function(e) {
-      trShowTask("error", String(e));
-      return false;
+      return current() ? failed(String(e)) : false;
     });
 }
 
 // ── Models ───────────────────────────────────────────────────
 function trLoadModels(callback) {
   if (modelsCache !== null) { callback(modelsCache); return; }
+  trModelsState = "loading";
   _trFetchJson("/api/plugins/yolo/models")
     .then(function(data) {
       modelsCache = Array.isArray(data) ? data : [];
+      trModelsState = "ready";
+      trGate();
       callback(modelsCache);
     })
-    .catch(function() { callback([]); });
+    .catch(function() { trModelsState = "failed"; trGate(); callback([]); });
 }
 
 function trPopulateModelDropdown(taskType, onReady, wanted) {
@@ -728,6 +803,7 @@ function trPopulateModelDropdown(taskType, onReady, wanted) {
       if (!onReady) trOnModelChange();
     }
     trExplainEmptyModels(models.length === 0);
+    trGate();  // the model was chosen in code
 
     if (onReady) onReady();
   });
@@ -1143,35 +1219,30 @@ function trRenderParamFields(allFields, savedValues) {
 
 // ── Training ─────────────────────────────────────────────────
 function trStartTraining() {
+  // Start is disabled while it cannot run; a stale state must not submit either.
+  if (_trSubmitting || trStartBlocker()) { trGate(); return; }
   var data = trCollectFormData();
-  if (!data.train_table_url.trim()) {
-    alert("Please select a train table.");
-    return;
-  }
-  if (!data.model_name) {
-    alert("Please select a model.");
-    return;
-  }
   // Start training (host-managed via the unified run_job contract) through the SDK's
   // PluginJobs client. project_name attributes the job in the generic Queue & Progress
   // panel — the host reads it from the run body only. Left blank, PluginJobs fills it
   // from the launch context (the project page the plugin was opened from).
-  if (typeof PluginJobs === "undefined") {
-    trLog("Error: job tracker unavailable — reload the page.");
-    return;
-  }
   // The run body is self-contained: project_config rides inline, so a remote GPU worker
   // needs no local project store (SDK guide, "Run-body conventions for remote workers").
   // The preset's id and name are set while the form is unchanged from it, so the job card
   // can name it, and empty otherwise. A run never saves a preset.
   var presetId = trPresets ? trPresets.presetId() : "";
   var config = Object.assign({}, data, { id: presetId, name: trPresets ? trPresets.presetName() : "" });
+  // One run per press: Start stays disabled until the run request answers.
+  _trSubmitting = true;
+  trGate();
   PluginJobs.start("yolo", {
     project_id: presetId,
     project_name: (document.getElementById("tr-3lc-project").value || "").trim(),
     project_config: config,
   })
     .then(function(trainResp) {
+      _trSubmitting = false;
+      trGate();
       if (!trainResp || trainResp.error) {
         trLog("Error: " + ((trainResp && trainResp.error) || "failed to start job"));
         return;
@@ -1184,7 +1255,7 @@ function trStartTraining() {
       trShowCurrentJob(trainResp.job_id, _trJobLabel(config));
       trTrackJob(trainResp.job_id);
     })
-    .catch(function(e) { trLog("Error starting training: " + e); });
+    .catch(function(e) { _trSubmitting = false; trGate(); trLog("Error starting training: " + e); });
 }
 
 // /run answers {status, provisioning} instead of a job while the plugin's
@@ -1520,7 +1591,11 @@ function trSwapUrls() {
   trInitSocket();
   trSeedFromHost();
   trLoadQueue();
+  // Start and Swap follow every edit; what the page sets in code calls trGate itself.
+  document.getElementById("tr-page").addEventListener("input", trGate);
+  document.getElementById("tr-page").addEventListener("change", trGate);
   trLoadModels(function() {});
+  trGate();
   // The preset bar opens the form: as it was last left in this browser, else on Default
   // settings, with the tables the plugin was opened with (trContextInputs) in place of its own.
   trInitPresets();
