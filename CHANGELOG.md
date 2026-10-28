@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Browse panel
+
+- **The Browse panel under Pretrained Model URL picks a file from a click anywhere on its row**, not only
+  on its Select button, and opens on a double-click in the empty field, as the table fields do (from the
+  SDK's data-source picker).
+
 #### Presets
 
 - **The Config bar is the SDK's preset bar.** One line at the top of the form: a select with Default
