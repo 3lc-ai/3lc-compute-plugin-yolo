@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Presets
+
+- **The Config bar is the SDK's preset bar.** One line at the top of the form: a select with Default
+  settings and the saved presets (model, task and age in the label), Save as… that opens a prefilled
+  name field in the bar, and a trash icon that asks in the bar. The entry the form came from gains
+  "· modified" once the form differs; picking it again reverts. A preset is a template of the whole
+  form, tables included: picking one fills the form, only Save writes one, and **Train no longer saves
+  into the selected config**, so a setup kept as a reference stays as it was. The "Config Name" field
+  and "+ New", "Save New" and "Delete" are gone with the bar. Saved configs appear as presets as they
+  are; the config the old bar remembered opens once more, then the page opens as it was last left in
+  this browser.
+- **Opened from a table**, the table replaces the preset's tables (a validation table it does not
+  cover is cleared) and stays while the page is open, also when another preset is picked.
+- The run body's `project_config` carries the preset's `id` and `name` only while the form is
+  unchanged from it, so the job card can name it. Requires SDK 0.5.5.
+
 #### Data movement
 
 - **The manifest declares the data a run reads.** `[runtime] data_inputs` names the train and val

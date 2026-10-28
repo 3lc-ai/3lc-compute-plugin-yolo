@@ -6,22 +6,6 @@
 /* Uses shared classes from plugin-common.css: plugin-dot, plugin-task-badge,
    plugin-param-group, plugin-queue-item, plugin-mono, etc. */
 
-/* Config bar — horizontal dropdown replacing sidebar */
-.tr-config-bar {
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 14px; padding: 10px 14px;
-  background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 8px);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-}
-.tr-config-bar select {
-  flex: 1; max-width: 320px; font-size: 12px; font-weight: 500;
-}
-.tr-config-bar .bar-label {
-  font-size: 10px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.3px; color: var(--text-muted); white-space: nowrap;
-}
-
 /* Metrics container */
 .tr-metrics { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 
@@ -47,7 +31,7 @@
 .yolo-license-note a { color: var(--accent); }
 </style>
 
-<div class="plugin-page">
+<div class="plugin-page" id="tr-page">
 <!-- ── License notice ─────────────────────────────────────── -->
 <div class="yolo-license-note">
   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v11"/><path d="M3 5h10"/><path d="M5 5l-2.2 4.5a2.4 2.4 0 0 0 4.4 0L5 5z"/><path d="M11 5l-2.2 4.5a2.4 2.4 0 0 0 4.4 0L11 5z"/><path d="M6 14h4"/></svg>
@@ -101,16 +85,8 @@
     </div>
 </div>
 
-<!-- ── Config bar (replaces sidebar) ──────────────────────── -->
-<div class="tr-config-bar">
-  <span class="bar-label">Config</span>
-  <select id="tr-config-select" class="form-control" onchange="trOnConfigSelect(this.value)">
-    <option value="">New config</option>
-  </select>
-  <button class="btn btn-ghost btn-sm" onclick="trNewProject()">+ New</button>
-  <button class="btn btn-secondary btn-sm" id="tr-save-new-btn" onclick="trSaveAsNew()" style="display:none">Save New</button>
-  <button class="btn btn-danger btn-sm" id="tr-delete-btn" onclick="trDeleteProject()" style="display:none">Delete</button>
-</div>
+<!-- ── Presets: the SDK's preset bar renders here (_tlcPluginPresets) ── -->
+<div id="tr-presets"></div>
 
     <!-- ── Input Tables ──────────────────────────────────── -->
     <div class="card mb-16">
@@ -118,12 +94,6 @@
         <div class="card-title"><span class="plugin-section-number">1</span> Input Tables</div>
       </div>
       <div class="card-body">
-
-        <!-- Config Name -->
-        <div class="form-group">
-          <label class="form-label" for="tr-project-name">Config Name</label>
-          <input type="text" id="tr-project-name" class="form-control" placeholder="e.g. MenWomen ResNet run 1">
-        </div>
 
         <!-- Tables -->
         <div class="form-group">
@@ -310,16 +280,14 @@
 // Communicates with Compute Service for all API + SocketIO
 
 // ── State ─────────────────────────────────────────────────────
-var currentProjectId = null;
 var modelsCache = null;       // [{name, display_name, supported_tasks}]
 var modelParamsCache = {};    // {modelName: [field, ...]}
 var detectedTask = null;
-var _autoSaveTimer = null;
 var _currentJobId = null;
 var currentMode = "train";    // "train" or "collect"
-var _savedSnapshot = null;    // snapshot of form data at last save/load
+var trPresets = null;         // the SDK's preset bar (_tlcPluginPresets), once mounted
 
-var _STORAGE_KEY = "yolo_selected_project";
+var _STORAGE_KEY = "yolo_selected_project";  // the old config bar's key; the preset bar honours it once
 
 // Compute Service URL from PLUGIN_API bridge
 var COMPUTE_URL = PLUGIN_API.getConfig("compute_service_url");
@@ -430,7 +398,6 @@ function trTrackJob(jobId) {
       }
       trLog("Job completed! Run: " + (job.run_url || "(no run)"));
       trFinishCurrentJob("completed", job);
-      trLoadProjects();
     },
     onError: function(job) {
       _trUntrack = null;
@@ -482,61 +449,11 @@ function trLog(msg) {
 }
 
 // ── Save bar (dirty tracking) ───────────────────────────────
-function trTakeSnapshot() {
-  _savedSnapshot = JSON.stringify(trCollectFormData());
-}
-
-function trCheckDirty() {
-  if (!currentProjectId) return;
-  var current = JSON.stringify(trCollectFormData());
-  var dirty = current !== _savedSnapshot;
-  var btn = document.getElementById("tr-save-new-btn");
-  if (btn) {
-    btn.style.display = dirty ? "" : "none";
-  }
-}
-
+// ── Presets ──────────────────────────────────────────────────
+// The SDK's preset bar owns the saved setups (SDK guide → Presets). The form's handlers call this
+// after a change the page's input/change events do not carry, so the bar can compare the form.
 function trScheduleAutoSave() {
-  clearTimeout(_autoSaveTimer);
-  _autoSaveTimer = setTimeout(trCheckDirty, 300);
-}
-
-function trSaveAsNew() {
-  var data = trCollectFormData();
-  data.id = "";
-  if (!data.name.trim()) {
-    alert("Please enter a config name.");
-    return;
-  }
-
-  _trPost("/api/plugins/yolo/projects", data)
-    .then(function(resp) {
-      if (resp.error) { alert("Error: " + resp.error); return; }
-      currentProjectId = resp.id;
-      localStorage.setItem(_STORAGE_KEY, currentProjectId);
-      document.getElementById("tr-delete-btn").style.display = "";
-      trTakeSnapshot();
-      trCheckDirty();
-      trLoadProjects();
-      trLog("Saved as new config.");
-    })
-    .catch(function(e) { alert("Save failed: " + e); });
-}
-
-function trAttachAutoSave() {
-  var ids = ["tr-project-name", "tr-train-url", "tr-val-url", "tr-use-latest",
-             "tr-model-select", "tr-3lc-project", "tr-run-name"];
-  ids.forEach(function(id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener("input", trScheduleAutoSave);
-    el.addEventListener("change", trScheduleAutoSave);
-  });
-  var paramsContainer = document.getElementById("tr-params-container");
-  if (paramsContainer) {
-    paramsContainer.addEventListener("input", trScheduleAutoSave);
-    paramsContainer.addEventListener("change", trScheduleAutoSave);
-  }
+  if (trPresets) trPresets.changed();
 }
 
 // ── Mode Toggle ─────────────────────────────────────────────
@@ -575,122 +492,96 @@ function trApplyModeVisibility() {
   }
 }
 
-// ── Projects ─────────────────────────────────────────────────
-function trLoadProjects() {
-  _trFetchJson("/api/plugins/yolo/projects")
-    .then(function(data) {
-      if (data.error) { trLog("Error loading configs: " + data.error); return; }
-      trRenderProjectsList(Array.isArray(data) ? data : []);
-    })
-    .catch(function(e) {
-      trLog("Error loading configs: " + String(e));
-    });
+// ── Presets: the form in and out ─────────────────────────────
+function trDefaultFormData() {
+  return {
+    run_name: "", project_name: "", model_name: "", mode: "train", task_type: "",
+    train_table_url: "", val_table_url: "", use_latest: false,
+    params: { copy_model_to_run: true, workers: 8 },
+  };
 }
 
-function trRenderProjectsList(projects) {
-  var sel = document.getElementById("tr-config-select");
-  var currentVal = currentProjectId || "";
-  sel.innerHTML = '<option value="">New config</option>';
-  projects.forEach(function(p) {
-    var opt = document.createElement("option");
-    opt.value = p.id;
-    var modelLabel = (p.params && p.params.model) ? p.params.model.replace(/\.pt$/, "") : (p.model_name || "?");
-    opt.textContent = (p.name || "Untitled") + " — " + modelLabel + " · " + (p.task_type || "?");
-    if (p.id === currentVal) opt.selected = true;
-    sel.appendChild(opt);
-  });
-  // Show/hide delete button based on whether a config is selected
-  document.getElementById("tr-delete-btn").style.display = currentVal ? "" : "none";
-}
-
-function trOnConfigSelect(val) {
-  if (val) {
-    trLoadProject(val);
-  } else {
-    trNewProject();
+// The tables the plugin was opened with: ?train=&val= from the DAG's Train link, or the action
+// button's tables. They replace the preset's inputs for the page's life (SDK guide → Presets).
+function trContextInputs() {
+  var ctx = (typeof PLUGIN_API !== "undefined" && PLUGIN_API.context) ? PLUGIN_API.context : {};
+  var urls = ctx.resourceUrls || [];
+  var q = new URLSearchParams(window.location.search);
+  if (q.has("train") || q.has("val")) {
+    return { train_table_url: q.get("train") || "", val_table_url: q.get("val") || "" };
   }
+  if (urls.length) return { train_table_url: urls[0], val_table_url: urls[1] || "" };
+  return null;
 }
 
-function trNewProject() {
-  currentProjectId = null;
-  localStorage.removeItem(_STORAGE_KEY);
-  document.getElementById("tr-config-select").value = "";
-  document.getElementById("tr-project-name").value = "";
-  document.getElementById("tr-run-name").value = "";
-  document.getElementById("tr-3lc-project").value = "";
-  document.getElementById("tr-train-url").value = "";
-  document.getElementById("tr-val-url").value = "";
-  document.getElementById("tr-use-latest").checked = false;
-  document.getElementById("tr-task-badge").textContent = "--";
-  document.getElementById("tr-task-detail").textContent = "";
-  document.getElementById("tr-model-select").value = "";
-  document.getElementById("tr-params-container").innerHTML = "";
-  detectedTask = null;
-  trSetMode("train");
-  document.getElementById("tr-save-new-btn").style.display = "none";
-  document.getElementById("tr-delete-btn").style.display = "none";
-  trTakeSnapshot();
-  trCheckDirty();
-  trLoadProjects();
+function trModelLabel(values) {
+  return (values.model_name || "yolo").split("/").pop().replace(/\.pt$/, "");
 }
 
-function trLoadProject(projectId) {
-  _trFetchJson("/api/plugins/yolo/projects/" + projectId)
-    .then(function(p) {
-      if (p.error) { trLog("Error: " + p.error); return; }
-      currentProjectId = p.id;
-      localStorage.setItem(_STORAGE_KEY, p.id);
-      document.getElementById("tr-project-name").value = p.name || "";
-      document.getElementById("tr-run-name").value = p.run_name || "";
-      document.getElementById("tr-3lc-project").value = p.project_name || "";
-      document.getElementById("tr-train-url").value = p.train_table_url || "";
-      document.getElementById("tr-val-url").value = p.val_table_url || "";
-      document.getElementById("tr-use-latest").checked = !!p.use_latest;
+// The name a new preset gets unless the person types one: "yolo11n detect · 2026-10-27".
+function trAutoName(values) {
+  var d = new Date();
+  var dateStr = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  return trModelLabel(values) + " " + (values.task_type || values.mode || "train") + " \u00b7 " + dateStr;
+}
 
-      trSetMode(p.mode || "train");
+// What the list shows after a preset's name: "yolo11n · detect".
+function trPresetSummary(values) {
+  return [values.model_name ? trModelLabel(values) : "", values.task_type || values.mode];
+}
 
-      detectedTask = p.task_type || null;
-      document.getElementById("tr-task-badge").textContent = p.task_type || "--";
+function trShowTask(badge, detail) {
+  document.getElementById("tr-task-badge").textContent = badge;
+  document.getElementById("tr-task-detail").textContent = detail || "";
+}
 
-      trPopulateModelDropdown(p.task_type, function() {
-        document.getElementById("tr-model-select").value = p.model_name || "";
-        trLoadModelParams(p.model_name, p.params || {});
-      });
-
-      // Restore pretrained model and copy checkbox
-      var savedParams = p.params || {};
-      document.getElementById("tr-pretrained-url").value = savedParams.pretrained_model_url || "";
-      document.getElementById("tr-copy-model").checked = savedParams.copy_model_to_run !== false;
-      document.getElementById("tr-workers").value = savedParams.workers != null ? savedParams.workers : 8;
-
-      document.getElementById("tr-config-select").value = p.id;
-      document.getElementById("tr-save-new-btn").style.display = "";
-      document.getElementById("tr-delete-btn").style.display = "";
-
-      setTimeout(function() { trTakeSnapshot(); trCheckDirty(); }, 100);
-      trLoadProjects();
-    })
-    .catch(function(e) {
-      trLog("Error loading project: " + e);
-      // A remembered id that no longer resolves (deleted, or saved by a worker that is
-      // gone) must not re-error on every mount — forget it and start clean next time.
-      if (/\b404\b/.test(String(e)) && localStorage.getItem(_STORAGE_KEY) === projectId) {
-        localStorage.removeItem(_STORAGE_KEY);
-        if (currentProjectId === projectId) currentProjectId = null;
-      }
+// Fill the form from a preset's values. Resolves once the model's parameters are rendered, so the
+// preset bar compares the form only then.
+function trApplyFormData(values) {
+  values = values || {};
+  var params = values.params || {};
+  document.getElementById("tr-run-name").value = values.run_name || "";
+  document.getElementById("tr-3lc-project").value = values.project_name || "";
+  document.getElementById("tr-train-url").value = values.train_table_url || "";
+  document.getElementById("tr-val-url").value = values.val_table_url || "";
+  document.getElementById("tr-use-latest").checked = !!values.use_latest;
+  document.getElementById("tr-pretrained-url").value = params.pretrained_model_url || "";
+  document.getElementById("tr-copy-model").checked = params.copy_model_to_run !== false;
+  document.getElementById("tr-workers").value = params.workers != null ? params.workers : 8;
+  trSetMode(values.mode || "train");
+  trCheckTableAgainstRunTarget();
+  detectedTask = values.task_type || null;
+  trShowTask(detectedTask || "--", "");
+  var model = values.model_name || "";
+  // The train table decides the task, and the 3LC project when none is set; the preset's own task
+  // stands while the table cannot be read.
+  var detect = document.getElementById("tr-train-url").value.trim() ? trDetectTask() : Promise.resolve(false);
+  return detect.then(function() {
+    return new Promise(function(resolve) {
+      trPopulateModelDropdown(detectedTask, function() {
+        var chosen = document.getElementById("tr-model-select").value;
+        resolve(trLoadModelParams(chosen, chosen === model ? params : {}));
+      }, model);
     });
+  });
 }
 
-function trDeleteProject() {
-  if (!currentProjectId) return;
-  if (!confirm("Delete this YOLO config?")) return;
-
-  _trPost("/api/plugins/yolo/projects/" + currentProjectId + "/delete", {})
-    .then(function() {
-      trLog("Project deleted.");
-      trNewProject();
-    })
-    .catch(function(e) { trLog("Error: " + e); });
+function trInitPresets() {
+  trPresets = _tlcPluginPresets({
+    pluginId: "yolo",
+    apiPath: "/api/plugins/yolo/projects",
+    mount: "tr-presets",
+    formRoot: "tr-page",
+    collect: trCollectFormData,
+    apply: trApplyFormData,
+    defaults: trDefaultFormData,
+    inputs: ["train_table_url", "val_table_url"],
+    contextInputs: trContextInputs,
+    autoName: trAutoName,
+    summary: trPresetSummary,
+    legacyKey: _STORAGE_KEY,
+  });
+  return trPresets.init();
 }
 
 function trCollectFormData() {
@@ -715,8 +606,6 @@ function trCollectFormData() {
   if (isNaN(params.workers) || params.workers < 0) params.workers = 8;
 
   return {
-    id: currentProjectId || "",
-    name: document.getElementById("tr-project-name").value.trim(),
     run_name: document.getElementById("tr-run-name").value.trim(),
     project_name: document.getElementById("tr-3lc-project").value.trim(),
     model_name: document.getElementById("tr-model-select").value,
@@ -762,40 +651,44 @@ function trOnTrainTableChange() {
   trCheckTableAgainstRunTarget();
   clearTimeout(_detectDebounce);
   _detectDebounce = setTimeout(function() {
-    var url = document.getElementById("tr-train-url").value.trim();
-    if (!url) {
-      document.getElementById("tr-task-badge").textContent = "--";
-      document.getElementById("tr-task-detail").textContent = "";
-      detectedTask = null;
-      return;
-    }
-    document.getElementById("tr-task-badge").textContent = "detecting...";
-    document.getElementById("tr-task-detail").textContent = "";
-
-    _trPost("/api/plugins/yolo/detect-task", { url: url })
-      .then(function(data) {
-        if (data.error) {
-          document.getElementById("tr-task-badge").textContent = "error";
-          document.getElementById("tr-task-detail").textContent = data.error;
-          return;
-        }
-        detectedTask = data.task;
-        document.getElementById("tr-task-badge").textContent = data.task;
-        document.getElementById("tr-task-detail").textContent = data.details || "";
-        var projInput = document.getElementById("tr-3lc-project");
-        if (data.project_name && !projInput.value.trim()) {
-          projInput.value = data.project_name;
-        }
-        trPopulateModelDropdown(data.task);
-        // Re-render params to filter checkpoint options by detected task
-        var curModel = document.getElementById("tr-model-select").value;
-        if (curModel) trLoadModelParams(curModel, trCollectFormData().params || {});
-      })
-      .catch(function(e) {
-        document.getElementById("tr-task-badge").textContent = "error";
-        document.getElementById("tr-task-detail").textContent = String(e);
-      });
+    trDetectTask().then(function(detected) {
+      if (!detected) return;
+      trPopulateModelDropdown(detectedTask);
+      // Re-render params to filter checkpoint options by detected task
+      var curModel = document.getElementById("tr-model-select").value;
+      if (curModel) trLoadModelParams(curModel, trCollectFormData().params || {});
+    });
   }, 500);
+}
+
+// Detect the task from the train table; resolves true when it answered. Fills the 3LC project when
+// none is set.
+function trDetectTask() {
+  var url = document.getElementById("tr-train-url").value.trim();
+  if (!url) {
+    detectedTask = null;
+    trShowTask("--", "");
+    return Promise.resolve(false);
+  }
+  trShowTask("detecting...", "");
+  return _trPost("/api/plugins/yolo/detect-task", { url: url })
+    .then(function(data) {
+      if (data.error) {
+        trShowTask("error", data.error);
+        return false;
+      }
+      detectedTask = data.task;
+      trShowTask(data.task, data.details || "");
+      var projInput = document.getElementById("tr-3lc-project");
+      if (data.project_name && !projInput.value.trim()) {
+        projInput.value = data.project_name;
+      }
+      return true;
+    })
+    .catch(function(e) {
+      trShowTask("error", String(e));
+      return false;
+    });
 }
 
 // ── Models ───────────────────────────────────────────────────
@@ -809,10 +702,10 @@ function trLoadModels(callback) {
     .catch(function() { callback([]); });
 }
 
-function trPopulateModelDropdown(taskType, onReady) {
+function trPopulateModelDropdown(taskType, onReady, wanted) {
   trLoadModels(function(models) {
     var select = document.getElementById("tr-model-select");
-    var prev = select.value;
+    var prev = wanted || select.value;
     select.innerHTML = '<option value="">-- Select a model --</option>';
 
     var compatible = [];
@@ -826,12 +719,13 @@ function trPopulateModelDropdown(taskType, onReady) {
       }
     });
 
-    // Restore previous selection, or auto-select if exactly one match
+    // Restore previous selection, or auto-select if exactly one match. A caller with onReady
+    // loads the parameters itself, once; a second load here would re-render them after it.
     if (prev && compatible.indexOf(prev) !== -1) {
       select.value = prev;
     } else if (compatible.length === 1) {
       select.value = compatible[0];
-      trOnModelChange();
+      if (!onReady) trOnModelChange();
     }
     trExplainEmptyModels(models.length === 0);
 
@@ -873,21 +767,22 @@ function trOnModelChange() {
 function trLoadModelParams(modelName, savedValues) {
   if (!modelName) {
     document.getElementById("tr-params-container").innerHTML = "";
-    return;
+    return Promise.resolve();
   }
 
   var renderFromCache = function() {
     var fields = modelParamsCache[modelName];
     if (!fields) return;
     trRenderParamFields(fields, savedValues);
+    trScheduleAutoSave();  // the form is whole again: the preset bar compares it now, not mid-render
   };
 
   if (modelParamsCache[modelName]) {
     renderFromCache();
-    return;
+    return Promise.resolve();
   }
 
-  _trFetchJson("/api/plugins/yolo/models/" + modelName + "/params")
+  return _trFetchJson("/api/plugins/yolo/models/" + modelName + "/params")
     .then(function(fields) {
       modelParamsCache[modelName] = Array.isArray(fields) ? fields : [];
       renderFromCache();
@@ -1257,57 +1152,39 @@ function trStartTraining() {
     alert("Please select a model.");
     return;
   }
-  if (!data.name.trim()) {
-    var d = new Date();
-    var dateStr = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-    var model = (data.model_name || "yolo").split("/").pop().replace(/\.pt$/, "");
-    var task = data.task_type || "train";
-    data.name = dateStr + " " + model + " " + task;
+  // Start training (host-managed via the unified run_job contract) through the SDK's
+  // PluginJobs client. project_name attributes the job in the generic Queue & Progress
+  // panel — the host reads it from the run body only. Left blank, PluginJobs fills it
+  // from the launch context (the project page the plugin was opened from).
+  if (typeof PluginJobs === "undefined") {
+    trLog("Error: job tracker unavailable — reload the page.");
+    return;
   }
-
-  // Save project, then start training
-  _trPost("/api/plugins/yolo/projects", data)
-    .then(function(resp) {
-      if (resp.error) { trLog("Error saving: " + resp.error); return; }
-      currentProjectId = resp.id;
-      localStorage.setItem(_STORAGE_KEY, currentProjectId);
-      trLoadProjects();
-
-      // Start training (host-managed via the unified run_job contract) through the
-      // SDK's PluginJobs client. project_name attributes the job in the generic
-      // Queue & Progress panel — the host reads it from the run body only; the value
-      // in the saved config never reaches the job record. Left blank, PluginJobs
-      // fills it from the launch context (the project page the plugin was opened
-      // from). (project_id is the yolo CONFIG id.)
-      if (typeof PluginJobs === "undefined") {
-        trLog("Error: job tracker unavailable — reload the page.");
+  // The run body is self-contained: project_config rides inline, so a remote GPU worker
+  // needs no local project store (SDK guide, "Run-body conventions for remote workers").
+  // The preset's id and name are set while the form is unchanged from it, so the job card
+  // can name it, and empty otherwise. A run never saves a preset.
+  var presetId = trPresets ? trPresets.presetId() : "";
+  var config = Object.assign({}, data, { id: presetId, name: trPresets ? trPresets.presetName() : "" });
+  PluginJobs.start("yolo", {
+    project_id: presetId,
+    project_name: (document.getElementById("tr-3lc-project").value || "").trim(),
+    project_config: config,
+  })
+    .then(function(trainResp) {
+      if (!trainResp || trainResp.error) {
+        trLog("Error: " + ((trainResp && trainResp.error) || "failed to start job"));
         return;
       }
-      // project_config rides inline so the run body is self-contained: a remote GPU
-      // worker has no local project store to resolve project_id against (SDK guide,
-      // "Run-body conventions for remote workers"). Harmless locally — the store copy
-      // and this payload are the same frozen config.
-      PluginJobs.start("yolo", {
-        project_id: resp.id,
-        project_name: (document.getElementById("tr-3lc-project").value || "").trim(),
-        project_config: Object.assign({}, data, { id: resp.id }),
-      })
-        .then(function(trainResp) {
-          if (!trainResp || trainResp.error) {
-            trLog("Error: " + ((trainResp && trainResp.error) || "failed to start job"));
-            return;
-          }
-          if (!trainResp.job_id) {
-            trLog(_trNotStartedMessage(trainResp));
-            return;
-          }
-          trLog("YOLO job submitted: " + trainResp.job_id);
-          trShowCurrentJob(trainResp.job_id, _trJobLabel(data));
-          trTrackJob(trainResp.job_id);
-        })
-        .catch(function(e) { trLog("Error starting training: " + e); });
+      if (!trainResp.job_id) {
+        trLog(_trNotStartedMessage(trainResp));
+        return;
+      }
+      trLog("YOLO job submitted: " + trainResp.job_id);
+      trShowCurrentJob(trainResp.job_id, _trJobLabel(config));
+      trTrackJob(trainResp.job_id);
     })
-    .catch(function(e) { trLog("Error: " + e); });
+    .catch(function(e) { trLog("Error starting training: " + e); });
 }
 
 // /run answers {status, provisioning} instead of a job while the plugin's
@@ -1642,35 +1519,10 @@ function trSwapUrls() {
 (function() {
   trInitSocket();
   trSeedFromHost();
-  trLoadProjects();
   trLoadQueue();
   trLoadModels(function() {});
-  trAttachAutoSave();
-  setTimeout(trTakeSnapshot, 500);
-
-  // Pre-fill from context (action buttons pass table URLs via query params)
-  var _ctx = (typeof PLUGIN_API !== 'undefined' && PLUGIN_API.context) ? PLUGIN_API.context : {};
-  var _ctxUrls = _ctx.resourceUrls || [];
-  var _urlParams = new URLSearchParams(window.location.search);
-
-  if (_urlParams.has("train") || _urlParams.has("val")) {
-    // Direct train/val params (e.g. from DAG "Train" link)
-    var trainUrl = _urlParams.get("train") || "";
-    var valUrl = _urlParams.get("val") || "";
-    document.getElementById("tr-train-url").value = trainUrl;
-    document.getElementById("tr-val-url").value = valUrl;
-    if (trainUrl) trOnTrainTableChange();
-  } else if (_ctxUrls.length > 0) {
-    // Action button context (table=url1&table=url2)
-    document.getElementById("tr-train-url").value = _ctxUrls[0];
-    if (_ctxUrls.length >= 2) document.getElementById("tr-val-url").value = _ctxUrls[1];
-    if (_ctx.projectName) document.getElementById("tr-project-name").value = _ctx.projectName;
-    trOnTrainTableChange();
-  } else {
-    var savedProjectId = localStorage.getItem(_STORAGE_KEY);
-    if (savedProjectId) {
-      trLoadProject(savedProjectId);
-    }
-  }
+  // The preset bar opens the form: as it was last left in this browser, else on Default
+  // settings, with the tables the plugin was opened with (trContextInputs) in place of its own.
+  trInitPresets();
 })();
 </script>
