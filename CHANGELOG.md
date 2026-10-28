@@ -11,9 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Browse panel
 
-- **The Browse panel under Pretrained Model URL picks a file from a click anywhere on its row**, not only
-  on its Select button, and opens on a double-click in the empty field, as the table fields do (from the
-  SDK's data-source picker).
+- **The Browse panel under Pretrained Model URL is the SDK's file chooser.** A Location line names the
+  place being browsed (this machine's folder, a bucket); a path bar follows the browsing; a click opens a
+  folder or picks the file; the arrow keys, Enter, Backspace and Escape work; and a double-click in the
+  empty field opens it, as the table fields do.
 
 #### Presets
 
