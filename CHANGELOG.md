@@ -90,6 +90,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on one remote node: an API key refused by the production account service, then an unwritable
   project root. The job failure now carries the discovery error and a hint for the known causes,
   discovery is retried once before giving up, and the models status route shares the same hints.
+- **Task detection waits for a cold worker.** The first train table after Compute started, or after
+  the worker had been idle for a few minutes, often showed Detected Task `error` with "AbortError:
+  signal is aborted without reason": starting the worker, importing tlc and reading the table took
+  longer than the Hub's default 10 s per request. The dialog's calls to the worker (task detection,
+  models, model parameters) now wait up to 60 s, and a call that still times out says so in words.
 
 ## [0.2.7] - 2026-10-07
 
