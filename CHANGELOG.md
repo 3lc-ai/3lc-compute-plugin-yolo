@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Browse panel
+
+- **The Browse panel under Pretrained Model URL is the SDK's file chooser.** A Location line names the
+  place being browsed (this machine's folder, a bucket); a path bar follows the browsing; a click opens a
+  folder or picks the file; the arrow keys, Enter, Backspace and Escape work; and a double-click in the
+  empty field opens it, as the table fields do.
+
 #### Presets
 
 - **The Config bar is the SDK's preset bar.** One line at the top of the form: a select with Default
