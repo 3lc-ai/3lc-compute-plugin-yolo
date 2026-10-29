@@ -294,6 +294,8 @@ var trPresets = null;         // the SDK's preset bar (_tlcPluginPresets), once 
 var trDetecting = false;      // the train table is being read (from the change, through the debounce)
 var trTaskError = "";         // why the train table could not be read; "" when it was, or is not yet
 var trModelsState = "loading"; // the model list: "loading", "ready" or "failed"
+var trModelDiscoveryError = ""; // why the worker could not initialize the model registry
+var trModelDiscoveryHint = "";
 var _trSubmitting = false;    // Start was pressed and the run request has not answered yet
 
 var _STORAGE_KEY = "yolo_selected_project";  // the old config bar's key; the preset bar honours it once
@@ -483,9 +485,13 @@ function trStartBlocker() {
   var label = trStartLabel();
   if (!trTableUrl("tr-train-url")) return "Choose a train table to enable " + label + ".";
   if (trDetecting) return "Wait while the train table is read to enable " + label + ".";
-  if (trTaskError) return "Choose another train table to enable " + label + ": this one could not be read.";
+  if (trTaskError) return "Cannot start " + label + ": " + trTaskError;
   if (trModelsState === "loading") return "Wait while the models load to enable " + label + ".";
-  if (!modelsCache || !modelsCache.length) return "Fix the problem shown under Model to enable " + label + ".";
+  if (!modelsCache || !modelsCache.length) {
+    var modelFailure = trModelDiscoveryError ? ": " + trModelDiscoveryError : ".";
+    var modelHint = trModelDiscoveryHint ? " " + trModelDiscoveryHint : "";
+    return "Cannot start " + label + ": no models could be loaded" + modelFailure + modelHint;
+  }
   if (!document.getElementById("tr-model-select").value) return "Choose a model to enable " + label + ".";
   if (typeof PluginJobs === "undefined") return "Reload the page to enable " + label + ".";
   return "";
@@ -746,7 +752,7 @@ function trDetectTask() {
     .then(function(data) {
       if (!current()) return false;
       if (!data || data.error || !data.task) {
-        return failed(String((data && (data.error || data.detail)) || "No task in the answer."));
+        return failed(String((data && (data.details || data.error || data.detail)) || "No task in the answer."));
       }
       trDetecting = false;
       detectedTask = data.task;
@@ -814,7 +820,12 @@ function trPopulateModelDropdown(taskType, onReady, wanted) {
 function trExplainEmptyModels(empty) {
   var select = document.getElementById("tr-model-select");
   var note = document.getElementById("tr-model-note");
-  if (!empty) { if (note) note.remove(); return; }
+  if (!empty) {
+    trModelDiscoveryError = "";
+    trModelDiscoveryHint = "";
+    if (note) note.remove();
+    return;
+  }
   if (!note) {
     note = document.createElement("div");
     note.id = "tr-model-note";
@@ -824,10 +835,23 @@ function trExplainEmptyModels(empty) {
   note.textContent = "No models could be loaded.";
   _trFetchJson("/api/plugins/yolo/models/status")
     .then(function(st) {
-      if (!st || (!st.error && !st.hint)) return;
-      note.textContent = "No models could be loaded. " + (st.hint ? st.hint + " " : "") + (st.error ? "(" + st.error + ")" : "");
+      // A successful model-list response can race this status request. Do not let an old
+      // discovery failure reappear after the worker has supplied usable models.
+      if (modelsCache && modelsCache.length) return;
+      trModelDiscoveryError = st && st.error ? String(st.error) : "";
+      trModelDiscoveryHint = st && st.hint ? String(st.hint) : "";
+      if (trModelDiscoveryError || trModelDiscoveryHint) {
+        note.textContent = "No models could be loaded. " +
+          (trModelDiscoveryError ? trModelDiscoveryError + ". " : "") + trModelDiscoveryHint;
+      }
+      trGate();
     })
-    .catch(function() {});
+    .catch(function(e) {
+      if (modelsCache && modelsCache.length) return;
+      trModelDiscoveryError = String(e);
+      note.textContent = "Could not load model status: " + trModelDiscoveryError;
+      trGate();
+    });
 }
 
 function trOnModelChange() {

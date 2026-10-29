@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Table-read errors explain what failed and keep the backend cause visible.** The form explains
+  that image aliases do not relocate table metadata or initialize storage access, and Start stays
+  disabled with that reason. Model-discovery failures and their setup hint also appear beside the
+  model picker and in Start's blocking reason.
+
 ### Changed
 
 #### Browse panel
