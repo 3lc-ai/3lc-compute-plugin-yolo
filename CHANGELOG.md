@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Use SDK 0.6.1 or newer so remote training progress and outcomes can be recovered after a
+  controller disconnect.
+
 #### Browse panel
 
 - **The Browse panel under Pretrained Model URL is the SDK's file chooser.** A Location line names the
