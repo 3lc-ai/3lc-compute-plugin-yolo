@@ -820,7 +820,12 @@ function trPopulateModelDropdown(taskType, onReady, wanted) {
 function trExplainEmptyModels(empty) {
   var select = document.getElementById("tr-model-select");
   var note = document.getElementById("tr-model-note");
-  if (!empty) { if (note) note.remove(); return; }
+  if (!empty) {
+    trModelDiscoveryError = "";
+    trModelDiscoveryHint = "";
+    if (note) note.remove();
+    return;
+  }
   if (!note) {
     note = document.createElement("div");
     note.id = "tr-model-note";
@@ -830,6 +835,9 @@ function trExplainEmptyModels(empty) {
   note.textContent = "No models could be loaded.";
   _trFetchJson("/api/plugins/yolo/models/status")
     .then(function(st) {
+      // A successful model-list response can race this status request. Do not let an old
+      // discovery failure reappear after the worker has supplied usable models.
+      if (modelsCache && modelsCache.length) return;
       trModelDiscoveryError = st && st.error ? String(st.error) : "";
       trModelDiscoveryHint = st && st.hint ? String(st.hint) : "";
       if (trModelDiscoveryError || trModelDiscoveryHint) {
@@ -839,6 +847,7 @@ function trExplainEmptyModels(empty) {
       trGate();
     })
     .catch(function(e) {
+      if (modelsCache && modelsCache.length) return;
       trModelDiscoveryError = String(e);
       note.textContent = "Could not load model status: " + trModelDiscoveryError;
       trGate();
