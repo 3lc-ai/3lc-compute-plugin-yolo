@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Use SDK 0.6.1 or newer so remote training progress and outcomes can be recovered after a
+  controller disconnect. New/default training configurations use zero data-loader workers to
+  reduce RAM pressure on small GPU nodes. Explicit worker counts in saved presets are preserved.
+
 #### Browse panel
 
 - **The Browse panel under Pretrained Model URL is the SDK's file chooser.** A Location line names the

@@ -181,9 +181,9 @@
         </div>
 
         <div class="form-group" style="margin-bottom:10px">
-          <label class="form-label" for="tr-workers">Worker Threads</label>
-          <input type="number" id="tr-workers" class="form-control" value="8" min="0" max="32" style="width:80px">
-          <div class="form-help">Number of dataloader worker threads. 0 = main thread only. Higher values speed up data loading on multi-core machines.</div>
+          <label class="form-label" for="tr-workers">Data-loader workers</label>
+          <input type="number" id="tr-workers" class="form-control" value="0" min="0" max="32" style="width:80px">
+          <div class="form-help">0 loads data in the training process and uses less RAM. Increase only when the node has memory to spare.</div>
         </div>
 
         <!-- Dynamic model params (YOLO Settings group renders here) -->
@@ -545,7 +545,7 @@ function trDefaultFormData() {
   return {
     run_name: "", project_name: "", model_name: "", mode: "train", task_type: "",
     train_table_url: "", val_table_url: "", use_latest: false,
-    params: { copy_model_to_run: true, workers: 8 },
+    params: { copy_model_to_run: true, workers: 0 },
   };
 }
 
@@ -595,7 +595,7 @@ function trApplyFormData(values) {
   document.getElementById("tr-use-latest").checked = !!values.use_latest;
   document.getElementById("tr-pretrained-url").value = params.pretrained_model_url || "";
   document.getElementById("tr-copy-model").checked = params.copy_model_to_run !== false;
-  document.getElementById("tr-workers").value = params.workers != null ? params.workers : 8;
+  document.getElementById("tr-workers").value = params.workers != null ? params.workers : 0;
   detectedTask = values.task_type || null;
   trTaskError = "";
   trDetecting = !!document.getElementById("tr-train-url").value.trim();
@@ -653,7 +653,7 @@ function trCollectFormData() {
   if (pretrainedUrl) params.pretrained_model_url = pretrainedUrl;
   params.copy_model_to_run = document.getElementById("tr-copy-model").checked;
   params.workers = parseInt(document.getElementById("tr-workers").value, 10);
-  if (isNaN(params.workers) || params.workers < 0) params.workers = 8;
+  if (isNaN(params.workers) || params.workers < 0) params.workers = 0;
 
   return {
     run_name: document.getElementById("tr-run-name").value.trim(),

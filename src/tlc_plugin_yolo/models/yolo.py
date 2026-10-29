@@ -379,7 +379,9 @@ class YOLOModel(BaseTrainingModel):
         lrf = float(params.get("lrf", 0.01))
         optimizer = params.get("optimizer", "auto")
         patience = int(params.get("patience", 50))
-        workers = int(params.get("workers", 8))
+        # Data-loader subprocesses can exhaust RAM on small GPU nodes. Opt in when
+        # the machine has headroom; a single training process is the reliable default.
+        workers = int(params.get("workers", 0))
         device = params.get("device", "").strip() or None
 
         # ── Extra YOLO args (key=value pairs) ──
