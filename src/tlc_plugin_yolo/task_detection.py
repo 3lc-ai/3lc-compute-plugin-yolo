@@ -32,11 +32,17 @@ def detect_task(table_url: str) -> dict[str, Any]:
         task = _modality_to_yolo_task(info.modality)
         project_name = getattr(table, "project_name", "") or ""
     except Exception as e:
+        error = f"Could not load table: {e}"
         return {
             "task": "unknown",
             "models": _models_for_task("unknown"),
-            "details": f"Could not load table: {e}",
-            "error": f"Could not load table: {e}",
+            "details": (
+                f"{error}. Task detection must read the table definition at this URL. "
+                "Redirecting image files with an alias does not relocate the table metadata "
+                "or provide access to it. Check that the selected run target can read this URL "
+                "and that its storage provider is initialized."
+            ),
+            "error": error,
             "project_name": "",
         }
 
