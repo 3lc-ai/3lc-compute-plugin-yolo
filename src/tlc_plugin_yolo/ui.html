@@ -54,13 +54,15 @@
 <div id="tr-presets"></div>
 
     <!-- ── Input Tables ──────────────────────────────────── -->
-    <div class="card mb-16">
+    <div class="plugin-workflow-grid">
+    <div class="plugin-wide card mb-16">
       <div class="card-header">
         <div class="card-title"><span class="plugin-section-number">1</span> Data</div>
       </div>
       <div class="card-body">
 
         <!-- Tables -->
+        <div class="plugin-table-pair">
         <div class="form-group">
           <!-- The Hub's required style: a red * on the label, a red wash while the field is empty. -->
           <label class="form-label required" for="tr-train-url">Training table</label>
@@ -69,7 +71,7 @@
           <div class="form-help">The task is detected from the table’s labels.</div>
           <div id="tr-run-target-data-note" class="form-help" style="display:none"></div>
         </div>
-        <div style="display:flex;justify-content:center">
+        <div class="plugin-table-swap">
           <button type="button" class="btn btn-ghost btn-sm" id="tr-swap-btn" onclick="trSwapUrls()"
                   title="Swap train / val URLs" data-title="Swap train / val URLs"
                   style="font-size:13px;padding:1px 6px;line-height:1">&#x21C5;</button>
@@ -79,6 +81,8 @@
           <tlc-table-field id="tr-val-url" placeholder="Paste URL or click Browse…"></tlc-table-field>
           <div class="form-help">Leave empty to skip validation.</div>
         </div>
+
+        </div><!-- /plugin-table-pair -->
 
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
           <input type="checkbox" id="tr-use-latest">
@@ -241,6 +245,7 @@
         <div id="tr-log" class="plugin-log-area tr-log-area"></div>
       </div>
     </div>
+</div><!-- /plugin-workflow-grid -->
 
 </div>
 
