@@ -897,7 +897,7 @@ function trRenderParamFields(allFields, savedValues) {
     // Regular fields in a 4-column CSS grid
     if (regularFields.length > 0) {
       var grid = document.createElement("div");
-      grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:10px;margin-bottom:8px";
+      grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px;margin-bottom:8px";
 
       regularFields.forEach(function(f) {
         var wrap = document.createElement("div");
@@ -1052,7 +1052,7 @@ function trRenderParamFields(allFields, savedValues) {
 
     if (tlcRegular.length > 0) {
       var grid = document.createElement("div");
-      grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:10px;margin-top:8px";
+      grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px;margin-top:8px";
 
       tlcRegular.forEach(function(f) {
         var wrap = document.createElement("div");
