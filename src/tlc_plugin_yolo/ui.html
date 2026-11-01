@@ -103,6 +103,7 @@
                            oninput="trOnTrainTableChange()"></tlc-table-field>
           <div class="form-help">Select your training data table. The task type (detection, segmentation, classification) is auto-detected from the table schema.</div>
           <div id="tr-run-target-data-note" class="form-help" style="display:none"></div>
+          <div id="tr-image-copy-size-note" class="form-help" role="status" style="display:none"></div>
         </div>
         <div style="display:flex;justify-content:center">
           <button type="button" class="btn btn-ghost btn-sm" id="tr-swap-btn" onclick="trSwapUrls()"
@@ -467,6 +468,7 @@ function trLog(msg) {
 function trScheduleAutoSave() {
   if (trPresets) trPresets.changed();
   trGate();
+  trScheduleImageCopyCheck();
 }
 
 // ── Start: disabled until it can run, saying why (PBI 19074) ──
@@ -672,6 +674,84 @@ function trCollectFormData() {
     use_latest: document.getElementById("tr-use-latest").checked,
     params: params,
   };
+}
+
+// Shared copy planning consumes an advisory size, not YOLO-specific parameter names.
+// Mirror train()'s last key=value override without changing the training configuration.
+function trEffectiveImageCopySize(params) {
+  params = params || {};
+  var value = params.imgsz == null || params.imgsz === "" ? "640" : String(params.imgsz);
+  String(params.extra_args || "").trim().split(/\s+/).forEach(function (token) {
+    var split = token.indexOf("=");
+    if (split >= 0 && token.slice(0, split).trim() === "imgsz") value = token.slice(split + 1);
+  });
+  if (!/^[+-]?\d+$/.test(value.trim())) return null;
+  var size = Number(value);
+  return Number.isInteger(size) && size >= 32 && size <= 8192 ? size : null;
+}
+
+function trBuildRunBody(data) {
+  data = data || trCollectFormData();
+  var presetId = trPresets ? trPresets.presetId() : "";
+  return {
+    project_id: presetId,
+    project_name: data.project_name || "",
+    project_config: Object.assign({}, data, { id: presetId, name: trPresets ? trPresets.presetName() : "" }),
+    image_resize_max_edge: data.use_latest ? null : trEffectiveImageCopySize(data.mode === "collect"
+      ? Object.assign({}, data.params, { extra_args: "" }) : data.params),
+  };
+}
+
+var _trImageCopyTimer = null;
+var _trImageCopyRequest = 0;
+var _trImageCopyLastKey = "";
+function trScheduleImageCopyCheck() {
+  clearTimeout(_trImageCopyTimer);
+  // Invalidate an older answer immediately, while the next form edit is debouncing.
+  _trImageCopyRequest += 1;
+  _trImageCopyTimer = setTimeout(trCheckImageCopySize, 450);
+}
+
+function trCheckImageCopySize() {
+  var note = document.getElementById("tr-image-copy-size-note");
+  if (!note || !window.PLUGIN_API || typeof PLUGIN_API.planRun !== "function") return Promise.resolve();
+  var data = trCollectFormData();
+  if (!data.train_table_url || !data.model_name) { note.style.display = "none"; _trImageCopyLastKey = ""; return Promise.resolve(); }
+  var body = trBuildRunBody(data);
+  var target = typeof PLUGIN_API.getRunTarget === "function" ? PLUGIN_API.getRunTarget() : {};
+  var key = JSON.stringify([body, target.target, target.node_id]);
+  if (key === _trImageCopyLastKey) return Promise.resolve();
+  var request = ++_trImageCopyRequest;
+  note.style.display = "none";
+  if (data.use_latest) {
+    note.textContent = "Select a fixed table revision to resize copied images. Turn off Use the latest table revision when the job starts.";
+    note.style.color = "var(--text-muted, #64748b)";
+    note.style.display = "";
+    return Promise.resolve();
+  }
+  if (body.image_resize_max_edge === null) return Promise.resolve();
+  return PLUGIN_API.planRun(body).then(function (plan) {
+    if (request !== _trImageCopyRequest || note !== document.getElementById("tr-image-copy-size-note")) return;
+    _trImageCopyLastKey = key;
+    var info = plan && plan.image_resize;
+    var copyable = plan && (plan.refs || []).some(function (ref) {
+      return ref && ref.reach !== "in_place" && Array.isArray(ref.options) && ref.options.indexOf("copy") !== -1;
+    });
+    if (!info || !info.eligible || !info.mismatched || !copyable) return;
+    var sizes = (info.sample_sizes || []).slice(0, 2).map(function (size) { return size.width + " × " + size.height; });
+    note.textContent = (sizes.length ? "Sample images are " + sizes.join(" and ") + " px. " : "Image sizes differ from the model input. ") +
+      "Model input: " + info.max_edge + " px. " + (info.enabled
+        ? "Image copies will use your chosen maximum size."
+        : "When you start, Resize images in the copy dialog can reduce their size while keeping the aspect ratio. Resizing is off by default.");
+    note.style.color = "var(--warning, #b87917)";
+    note.style.display = "";
+  }).catch(function () {
+    // The host's existing data-access note owns errors. A failed preview never starts a job.
+    if (request === _trImageCopyRequest) _trImageCopyLastKey = "";
+  });
+}
+if (window.PLUGIN_API && typeof PLUGIN_API.onRunTargetChange === "function") {
+  PLUGIN_API.onRunTargetChange(function () { _trImageCopyLastKey = ""; trScheduleImageCopyCheck(); });
 }
 
 // ── Task Detection ───────────────────────────────────────────
@@ -1254,16 +1334,11 @@ function trStartTraining() {
   // needs no local project store (SDK guide, "Run-body conventions for remote workers").
   // The preset's id and name are set while the form is unchanged from it, so the job card
   // can name it, and empty otherwise. A run never saves a preset.
-  var presetId = trPresets ? trPresets.presetId() : "";
-  var config = Object.assign({}, data, { id: presetId, name: trPresets ? trPresets.presetName() : "" });
+  var body = trBuildRunBody(data);
   // One run per press: Start stays disabled until the run request answers.
   _trSubmitting = true;
   trGate();
-  PluginJobs.start("yolo", {
-    project_id: presetId,
-    project_name: (document.getElementById("tr-3lc-project").value || "").trim(),
-    project_config: config,
-  })
+  PluginJobs.start("yolo", body)
     .then(function(trainResp) {
       _trSubmitting = false;
       trGate();
@@ -1276,7 +1351,7 @@ function trStartTraining() {
         return;
       }
       trLog("YOLO job submitted: " + trainResp.job_id);
-      trShowCurrentJob(trainResp.job_id, _trJobLabel(config));
+      trShowCurrentJob(trainResp.job_id, _trJobLabel(data));
       trTrackJob(trainResp.job_id);
     })
     .catch(function(e) { _trSubmitting = false; trGate(); trLog("Error starting training: " + e); });
@@ -1618,6 +1693,8 @@ function trSwapUrls() {
   // Start and Swap follow every edit; what the page sets in code calls trGate itself.
   document.getElementById("tr-page").addEventListener("input", trGate);
   document.getElementById("tr-page").addEventListener("change", trGate);
+  document.getElementById("tr-page").addEventListener("input", trScheduleImageCopyCheck);
+  document.getElementById("tr-page").addEventListener("change", trScheduleImageCopyCheck);
   trLoadModels(function() {});
   trGate();
   // The preset bar opens the form: as it was last left in this browser, else on Default

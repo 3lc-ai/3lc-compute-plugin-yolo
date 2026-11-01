@@ -32,6 +32,11 @@ entrypoint = "tlc_plugin_yolo:YoloPlugin"
 # installs it ONLY into this plugin's provisioned venv, never the host venv.
 provision_extra = "yolo"
 requires_gpu = true
+# Ultralytics opens images from disk; cloud aliases must be staged on any execution target.
+requires_local_table_data = true
+# UI computes the effective size, including an imgsz override in extra_args.
+image_resize_size_field = "image_resize_max_edge"
+image_resize_requires_fixed_tables_field = "project_config.use_latest"
 training = true
 # Dotted keys into the run body naming the data a run reads, so the Hub can ask where that data
 # is for the chosen machine before the run starts. The tables bring their own aliases; the
