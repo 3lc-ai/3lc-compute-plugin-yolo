@@ -313,7 +313,7 @@ function trInitSocket() {
 
   // Progress events
   PluginJobs.on(_YOLO_NS, "epoch_progress", function(data) {
-    trShowCurrentJob(data.job_id);
+    if (!trShowCurrentJob(data.job_id)) return;
     var m = data.metrics || {};
     var batch = m.batch || 0;
     var totalBatches = m.total_batches || 0;
@@ -350,7 +350,7 @@ function trInitSocket() {
   });
 
   PluginJobs.on(_YOLO_NS, "job_status", function(data) {
-    trShowCurrentJob(data.job_id);
+    if (!trShowCurrentJob(data.job_id)) return;
     trLog("[" + data.job_id.slice(0, 8) + "] " + data.status + ": " + data.message);
   });
 
@@ -364,13 +364,27 @@ function trInitSocket() {
 // the same record the Queue & Progress panel renders (`run_url`, `error`,
 // `project_name`). The plugin emits no terminal events of its own.
 var _trUntrack = null;
+var _trTrackedJobId = null;
+var _trFinishedJobs = [];
 
 function trTrackJob(jobId) {
-  if (typeof PluginJobs === "undefined") return;
+  if (typeof PluginJobs === "undefined" || _trTrackedJobId === jobId) return;
   if (_trUntrack) _trUntrack();
+  _trTrackedJobId = jobId;
   _trUntrack = PluginJobs.track(_YOLO_NS, jobId, {
+    onUpdate: function(job) {
+      if (job.id !== _currentJobId) return;
+      var progress = job.progress || {};
+      if (progress.label) document.getElementById("tr-epoch-label").textContent = progress.label;
+      if (typeof progress.percent === "number") {
+        var percent = Math.max(0, Math.min(100, progress.percent));
+        document.getElementById("tr-epoch-bar").style.width = percent + "%";
+        document.getElementById("tr-pct-label").textContent = Math.round(percent) + "%";
+      }
+    },
     onDone: function(job) {
       _trUntrack = null;
+      _trTrackedJobId = null;
       if (job.status === "cancelled") {
         trLog("Job cancelled.");
         trFinishCurrentJob("cancelled", job);
@@ -381,6 +395,7 @@ function trTrackJob(jobId) {
     },
     onError: function(job) {
       _trUntrack = null;
+      _trTrackedJobId = null;
       trLog("Job FAILED: " + (job.error || job.subtitle || "unknown error"));
       trFinishCurrentJob("failed", job);
     }
@@ -399,7 +414,7 @@ function trSeedFromHost() {
     var live = jobs.filter(function(j) { return j.status === "queued" || j.status === "running"; });
     if (!live.length) return;
     var job = live[0];
-    trShowCurrentJob(job.id, job.title || "YOLO job");
+    if (!trShowCurrentJob(job.id, job.title || "YOLO job")) return;
     var statusEl = document.getElementById("tr-current-status");
     statusEl.textContent = job.status;
     statusEl.className = "tr-queue-status plugin-status-" + job.status;
@@ -1246,7 +1261,7 @@ function trStartTraining() {
         return;
       }
       trLog("YOLO job submitted: " + trainResp.job_id);
-      trShowCurrentJob(trainResp.job_id, _trJobLabel(config));
+      trShowCurrentJob(trainResp.job_id, _trJobLabel(data));
       trTrackJob(trainResp.job_id);
     })
     .catch(function(e) { _trSubmitting = false; trGate(); trLog("Error starting training: " + e); });
@@ -1288,11 +1303,24 @@ function _trJobLabel(data) {
 // epoch_progress / job_status socket handlers drive visibility instead — each
 // of those events carries data.job_id.
 function trShowCurrentJob(jobId, label) {
+  // A delayed private telemetry event must not reopen a completed job.
+  if (jobId && _trFinishedJobs.indexOf(jobId) !== -1) return false;
+  var changedJob = jobId && jobId !== _currentJobId;
   if (jobId) { _currentJobId = jobId; }
   var currentDiv = document.getElementById("tr-current-job");
   var noCurrentDiv = document.getElementById("tr-no-current");
   var firstReveal = currentDiv.style.display === "none" || currentDiv.style.display === "";
-  if (firstReveal) {
+  if (changedJob) {
+    document.getElementById("tr-epoch-bar").style.width = "0%";
+    document.getElementById("tr-pct-label").textContent = "0%";
+    document.getElementById("tr-epoch-label").textContent = "Starting…";
+    document.getElementById("tr-current-info").textContent = "";
+    document.getElementById("tr-current-info").style.color = "";
+    document.getElementById("tr-current-open-link").innerHTML = "";
+    document.getElementById("tr-timing").innerHTML = "";
+    trClearMetrics();
+  }
+  if (firstReveal || changedJob) {
     currentDiv.style.display = "block";
     noCurrentDiv.style.display = "none";
     var statusEl = document.getElementById("tr-current-status");
@@ -1301,6 +1329,10 @@ function trShowCurrentJob(jobId, label) {
     document.getElementById("tr-stop-btn").style.display = "inline-block";
   }
   if (label) { document.getElementById("tr-current-label").textContent = label; }
+  // Also track jobs first observed through telemetry (for example, started in
+  // another tab). Epoch events alone never carry completion.
+  if (jobId) trTrackJob(jobId);
+  return true;
 }
 
 // Mark the current-job panel terminal (completed / failed / cancelled) from the
@@ -1308,6 +1340,16 @@ function trShowCurrentJob(jobId, label) {
 // does) and a failure shows the host's `error` text.
 function trFinishCurrentJob(status, job) {
   job = job || {};
+  var finishedId = job.id || _currentJobId;
+  if (finishedId && _trFinishedJobs.indexOf(finishedId) === -1) {
+    _trFinishedJobs.push(finishedId);
+    _trFinishedJobs = _trFinishedJobs.slice(-32);
+  }
+  if (status === "completed") {
+    document.getElementById("tr-epoch-bar").style.width = "100%";
+    document.getElementById("tr-pct-label").textContent = "100%";
+    document.getElementById("tr-epoch-label").textContent = "Completed";
+  }
   var statusEl = document.getElementById("tr-current-status");
   statusEl.textContent = status;
   statusEl.className = "tr-queue-status plugin-status-" + status;
