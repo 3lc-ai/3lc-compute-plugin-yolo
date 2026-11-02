@@ -120,10 +120,10 @@
           </div>
           <div class="form-group">
             <label class="form-label">Mode</label>
-            <div style="display:flex;gap:6px">
-              <button type="button" class="btn btn-sm btn-primary" id="tr-mode-train"
+            <div class="segmented-control" role="group" aria-label="Mode">
+              <button type="button" class="btn btn-sm active" aria-pressed="true" id="tr-mode-train"
                       onclick="trSetMode('train')">Train</button>
-              <button type="button" class="btn btn-sm btn-secondary" id="tr-mode-collect"
+              <button type="button" class="btn btn-sm" aria-pressed="false" id="tr-mode-collect"
                       onclick="trSetMode('collect')">Collect</button>
             </div>
             <div class="text-sm text-muted" id="tr-mode-help" style="margin-top:3px">
@@ -504,12 +504,16 @@ function trSetMode(mode) {
   var startBtn = document.getElementById("tr-train-btn");
 
   if (mode === "collect") {
-    trainBtn.className = "btn btn-sm btn-secondary";
-    collectBtn.className = "btn btn-sm btn-primary";
+    trainBtn.className = "btn btn-sm";
+    trainBtn.setAttribute("aria-pressed", "false");
+    collectBtn.className = "btn btn-sm active";
+    collectBtn.setAttribute("aria-pressed", "true");
     helpEl.textContent = "Collect metrics on an existing Ultralytics YOLO model (no training).";
   } else {
-    trainBtn.className = "btn btn-sm btn-primary";
-    collectBtn.className = "btn btn-sm btn-secondary";
+    trainBtn.className = "btn btn-sm active";
+    trainBtn.setAttribute("aria-pressed", "true");
+    collectBtn.className = "btn btn-sm";
+    collectBtn.setAttribute("aria-pressed", "false");
     helpEl.textContent = "Train a model with 3LC metrics collection.";
   }
   startBtn.textContent = trStartLabel();
@@ -1015,7 +1019,7 @@ function trRenderParamFields(allFields, savedValues) {
         var val = savedValues[f.id] !== undefined ? savedValues[f.id] : f["default"];
         var input = document.createElement("input");
         input.type = "checkbox";
-        input.style.cssText = "accent-color:var(--btn-primary-bg,#2a4a61);width:15px;height:15px";
+        input.style.cssText = "accent-color:var(--accent);width:15px;height:15px";
         input.checked = val === true || val === "true" || val === "1";
         input.dataset.paramId = f.id;
         input.addEventListener("change", trScheduleAutoSave);
@@ -1191,7 +1195,7 @@ function trRenderParamFields(allFields, savedValues) {
         var val = savedValues[f.id] !== undefined ? savedValues[f.id] : f["default"];
         var input = document.createElement("input");
         input.type = "checkbox";
-        input.style.cssText = "accent-color:var(--btn-primary-bg,#2a4a61);width:15px;height:15px";
+        input.style.cssText = "accent-color:var(--accent);width:15px;height:15px";
         input.checked = val === true || val === "true" || val === "1";
         input.dataset.paramId = f.id;
         input.addEventListener("change", trScheduleAutoSave);
