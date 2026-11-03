@@ -1275,7 +1275,7 @@ function _trNotStartedMessage(resp) {
   var state = prov.state || resp.status || "unknown";
   if (state === "failed") {
     return "Plugin environment build failed" + (prov.error ? ": " + prov.error : "") +
-      " — see Settings → Plugins.";
+      " — see the Plugins page.";
   }
   if (state === "provisioning" || state === "unprovisioned") {
     return "Plugin environment is still being set up (" + state + ") — try again in a moment.";
