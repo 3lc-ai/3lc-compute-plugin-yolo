@@ -144,7 +144,7 @@ requires-dist = [
     { name = "3lc", specifier = ">=3.5.0.dev149866,<4.0.0", index = "https://pypi.3lc.ai/repositories/prereleases/" },
     { name = "3lc", extras = ["pacmap", "umap"], marker = "extra == 'yolo'", specifier = ">=3.5.0.dev149866,<4.0.0", index = "https://pypi.3lc.ai/repositories/prereleases/" },
     { name = "3lc-compute-plugin-sdk", specifier = ">=0.5.5,<0.7.0", index = "https://pypi.3lc.ai/repositories/prereleases/" },
-    { name = "3lc-ultralytics", marker = "extra == 'yolo'", specifier = ">=0.5.1" },
+    { name = "3lc-ultralytics", marker = "extra == 'yolo'", specifier = ">=0.5.4" },
     { name = "torch", marker = "(sys_platform == 'linux' and extra == 'yolo') or (sys_platform == 'win32' and extra == 'yolo')", index = "https://download.pytorch.org/whl/cu126" },
     { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32' and extra == 'yolo'" },
     { name = "torchvision", marker = "(sys_platform == 'linux' and extra == 'yolo') or (sys_platform == 'win32' and extra == 'yolo')", index = "https://download.pytorch.org/whl/cu126" },
@@ -157,7 +157,7 @@ dev = [{ name = "pytest", specifier = ">=8,<9" }]
 
 [[package]]
 name = "3lc-ultralytics"
-version = "0.5.1"
+version = "0.5.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "3lc" },
@@ -165,9 +165,9 @@ dependencies = [
     { name = "ultralytics", version = "8.4.123", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' and sys_platform == 'darwin'" },
     { name = "ultralytics", version = "8.4.165", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or sys_platform != 'darwin'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/15/da/f352b18121048405d595c4f6a39fabd2caeea128256147771208f0aa55f3/3lc_ultralytics-0.5.1.tar.gz", hash = "sha256:9ee8b984fdd21c76665484af2d836e1094d28fd3433568ba191b1f6b9bc30c19", size = 1509595, upload-time = "2026-10-06T19:32:06.871Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/db/8d50d8b71cee3ee20689f496783d72f71a95133b98b0272c3f91445a9bd8/3lc_ultralytics-0.5.4.tar.gz", hash = "sha256:3a0d205db845773ace80af5eecaaf92021cb87bf4fbb9226aaa41277dec59c71", size = 1515659, upload-time = "2026-11-02T11:26:05.445Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/80/c45025b0bbe082441efc00e0b26dad9304931467b2d4f12c3b8b1e1c223a/3lc_ultralytics-0.5.1-py3-none-any.whl", hash = "sha256:2b41ffc0a344b0be24eb8766291f1136b08ffd1fc226de013617e687ce3dd914", size = 1531832, upload-time = "2026-10-06T19:32:05.434Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/93/65ac380f31d5d96753fb6371d0a3b40ac85468032bde85f6ba682eaf1c84/3lc_ultralytics-0.5.4-py3-none-any.whl", hash = "sha256:4c5cd6c0844984348fa316a7b0a255131878d2e02ef5063e178290971d3efc1d", size = 1533839, upload-time = "2026-11-02T11:26:04.142Z" },
 ]
 
 [[package]]

@@ -34,7 +34,7 @@ dependencies = [
 # plugin's LICENSE is AGPL-3.0.
 [project.optional-dependencies]
 yolo = [
-    "3lc-ultralytics>=0.5.1",
+    "3lc-ultralytics>=0.5.4",
     "torch",
     "torchvision",
     # Dimensionality reduction: the plugin materializes pacmap/umap-reduced tables in its OWN
