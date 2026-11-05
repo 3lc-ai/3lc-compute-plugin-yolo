@@ -23,6 +23,8 @@ def test_manifest_declares_the_run_body_data_inputs() -> None:
         "project_config.params.pretrained_model_url",
     ]
     assert "data_outputs" not in runtime
+    # Required copying is independent of optional resizing, including on the local host.
+    assert runtime["requires_local_table_data"] is True
 
 
 def test_fragment_has_no_alias_override_card() -> None:
