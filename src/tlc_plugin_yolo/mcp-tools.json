@@ -1,0 +1,626 @@
+[
+  {
+    "name": "train",
+    "title": "Train an Ultralytics YOLO model",
+    "description": "Train on a 3LC table. Uses the native YOLO configuration, data preparation and job queue. For a remote node, use the generated plan_data/prepare_data tools first. Returns a job_id; follow job_status for the run_url. Use form_from_run to preserve saved settings.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "weights": {
+          "type": "string",
+          "default": "yolov8n.pt",
+          "description": "Pre-trained model checkpoint."
+        },
+        "epochs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 50,
+          "description": "Epochs"
+        },
+        "batch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 512,
+          "default": 16,
+          "description": "Batch Size"
+        },
+        "imgsz": {
+          "type": "integer",
+          "minimum": 32,
+          "maximum": 1280,
+          "default": 640,
+          "description": "Image Size"
+        },
+        "lr0": {
+          "type": "number",
+          "minimum": 0.0001,
+          "maximum": 1.0,
+          "default": 0.01,
+          "description": "Initial LR"
+        },
+        "lrf": {
+          "type": "number",
+          "minimum": 0.0001,
+          "maximum": 1.0,
+          "default": 0.01,
+          "description": "Final LR = lr0 * lrf."
+        },
+        "optimizer": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "SGD",
+            "Adam",
+            "AdamW"
+          ],
+          "default": "auto",
+          "description": "Optimizer"
+        },
+        "patience": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500,
+          "default": 50,
+          "description": "Early stopping patience (0 = disabled)."
+        },
+        "device": {
+          "type": "string",
+          "default": "",
+          "description": "Auto uses CUDA or Apple MPS when available; cpu, mps, 0, 0,1 select a device explicitly."
+        },
+        "extra_args": {
+          "type": "string",
+          "default": "",
+          "description": "Additional YOLO args as key=value pairs, e.g. cos_lr=True weight_decay=0.001 warmup_epochs=5"
+        },
+        "label_column_name": {
+          "type": "string",
+          "default": "",
+          "description": "Annotation column; empty selects the table's default label column."
+        },
+        "image_embeddings_dim": {
+          "type": "string",
+          "enum": [
+            "0",
+            "2",
+            "3"
+          ],
+          "default": "2",
+          "description": "Image embedding dimensionality."
+        },
+        "image_embeddings_reducer": {
+          "type": "string",
+          "enum": [
+            "umap",
+            "pacmap"
+          ],
+          "default": "umap",
+          "description": "Reduction algorithm for image embeddings."
+        },
+        "conf_thres": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1.0,
+          "default": 0.1,
+          "description": "Confidence threshold for detections."
+        },
+        "max_det": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000,
+          "default": 300,
+          "description": "Max detections collected per image."
+        },
+        "sampling_weights": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use 3LC sampling weights."
+        },
+        "exclude_zero_weight_training": {
+          "type": "boolean",
+          "default": false,
+          "description": "Exclude zero-weighted samples in training."
+        },
+        "exclude_zero_weight_collection": {
+          "type": "boolean",
+          "default": false,
+          "description": "Exclude zero-weighted samples in collection."
+        },
+        "collection_disable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Disable 3LC metrics collection entirely."
+        },
+        "collection_val_only": {
+          "type": "boolean",
+          "default": false,
+          "description": "Collect metrics only on the validation set (skip training set collection)."
+        },
+        "collection_epoch_start": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "description": "Start epoch for collection (empty = best epoch only)."
+            },
+            {
+              "const": ""
+            }
+          ],
+          "default": ""
+        },
+        "collection_epoch_interval": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 1,
+          "description": "Epoch interval for metrics collection."
+        },
+        "instance_embeddings_dim": {
+          "type": "string",
+          "enum": [
+            "0",
+            "2",
+            "3"
+          ],
+          "default": "2",
+          "description": "Per-instance embedding dimensionality (per bounding box)."
+        },
+        "instance_embeddings_reducer": {
+          "type": "string",
+          "enum": [
+            "umap",
+            "pacmap",
+            "pca"
+          ],
+          "default": "umap",
+          "description": "Reduction algorithm for per-instance embeddings. PCA allows arbitrary output dimensions."
+        },
+        "ground_truth_instance_embeddings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Collect instance embeddings for ground-truth annotations."
+        },
+        "workers": {
+          "type": "integer",
+          "default": 8
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "default": "yolov8"
+        },
+        "run_name": {
+          "type": "string",
+          "default": "",
+          "x-chat-approval-variable": true
+        },
+        "project_name": {
+          "type": "string",
+          "default": ""
+        },
+        "task_type": {
+          "type": "string",
+          "enum": [
+            "",
+            "detection",
+            "segmentation",
+            "classification",
+            "pose",
+            "obb"
+          ],
+          "default": ""
+        },
+        "train_table_url": {
+          "type": "string",
+          "minLength": 1,
+          "x-chat-approval-variable": true
+        },
+        "val_table_url": {
+          "type": "string",
+          "default": ""
+        },
+        "use_latest": {
+          "type": "boolean",
+          "default": false
+        },
+        "checkpoint_url": {
+          "type": "string",
+          "default": ""
+        },
+        "copy_model_to_run": {
+          "type": "boolean",
+          "default": false
+        },
+        "collect_loss": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "train_table_url",
+        "weights"
+      ]
+    },
+    "job": {
+      "body": {
+        "project_config": {
+          "params": {
+            "model": "{{weights}}",
+            "epochs": "{{epochs}}",
+            "batch": "{{batch}}",
+            "imgsz": "{{imgsz}}",
+            "lr0": "{{lr0}}",
+            "lrf": "{{lrf}}",
+            "optimizer": "{{optimizer}}",
+            "patience": "{{patience}}",
+            "device": "{{device}}",
+            "extra_args": "{{extra_args}}",
+            "label_column_name": "{{label_column_name}}",
+            "image_embeddings_dim": "{{image_embeddings_dim}}",
+            "image_embeddings_reducer": "{{image_embeddings_reducer}}",
+            "conf_thres": "{{conf_thres}}",
+            "max_det": "{{max_det}}",
+            "sampling_weights": "{{sampling_weights}}",
+            "exclude_zero_weight_training": "{{exclude_zero_weight_training}}",
+            "exclude_zero_weight_collection": "{{exclude_zero_weight_collection}}",
+            "collection_disable": "{{collection_disable}}",
+            "collection_val_only": "{{collection_val_only}}",
+            "collection_epoch_start": "{{collection_epoch_start}}",
+            "collection_epoch_interval": "{{collection_epoch_interval}}",
+            "instance_embeddings_dim": "{{instance_embeddings_dim}}",
+            "instance_embeddings_reducer": "{{instance_embeddings_reducer}}",
+            "ground_truth_instance_embeddings": "{{ground_truth_instance_embeddings}}",
+            "workers": "{{workers}}",
+            "pretrained_model_url": "{{checkpoint_url}}",
+            "copy_model_to_run": "{{copy_model_to_run}}",
+            "collect_loss": "{{collect_loss}}"
+          },
+          "model_name": "{{model}}",
+          "run_name": "{{run_name}}",
+          "project_name": "{{project_name}}",
+          "task_type": "{{task_type}}",
+          "train_table_url": "{{train_table_url}}",
+          "val_table_url": "{{val_table_url}}",
+          "use_latest": "{{use_latest}}",
+          "mode": "train"
+        },
+        "project_name": "{{project_name}}"
+      },
+      "outputs": [
+        "run_url"
+      ],
+      "wait": false
+    }
+  },
+  {
+    "name": "collect",
+    "title": "Collect YOLO predictions and metrics",
+    "description": "Collect without training. Uses the native YOLO configuration, data preparation and job queue. For a remote node, use the generated plan_data/prepare_data tools first. Returns a job_id; follow job_status for the run_url. Use form_from_run to preserve saved settings.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "weights": {
+          "type": "string",
+          "default": "yolov8n.pt",
+          "description": "Pre-trained model checkpoint."
+        },
+        "epochs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 50,
+          "description": "Epochs"
+        },
+        "batch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 512,
+          "default": 16,
+          "description": "Batch Size"
+        },
+        "imgsz": {
+          "type": "integer",
+          "minimum": 32,
+          "maximum": 1280,
+          "default": 640,
+          "description": "Image Size"
+        },
+        "lr0": {
+          "type": "number",
+          "minimum": 0.0001,
+          "maximum": 1.0,
+          "default": 0.01,
+          "description": "Initial LR"
+        },
+        "lrf": {
+          "type": "number",
+          "minimum": 0.0001,
+          "maximum": 1.0,
+          "default": 0.01,
+          "description": "Final LR = lr0 * lrf."
+        },
+        "optimizer": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "SGD",
+            "Adam",
+            "AdamW"
+          ],
+          "default": "auto",
+          "description": "Optimizer"
+        },
+        "patience": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500,
+          "default": 50,
+          "description": "Early stopping patience (0 = disabled)."
+        },
+        "device": {
+          "type": "string",
+          "default": "",
+          "description": "Auto uses CUDA or Apple MPS when available; cpu, mps, 0, 0,1 select a device explicitly."
+        },
+        "extra_args": {
+          "type": "string",
+          "default": "",
+          "description": "Additional YOLO args as key=value pairs, e.g. cos_lr=True weight_decay=0.001 warmup_epochs=5"
+        },
+        "label_column_name": {
+          "type": "string",
+          "default": "",
+          "description": "Annotation column; empty selects the table's default label column."
+        },
+        "image_embeddings_dim": {
+          "type": "string",
+          "enum": [
+            "0",
+            "2",
+            "3"
+          ],
+          "default": "2",
+          "description": "Image embedding dimensionality."
+        },
+        "image_embeddings_reducer": {
+          "type": "string",
+          "enum": [
+            "umap",
+            "pacmap"
+          ],
+          "default": "umap",
+          "description": "Reduction algorithm for image embeddings."
+        },
+        "conf_thres": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1.0,
+          "default": 0.1,
+          "description": "Confidence threshold for detections."
+        },
+        "max_det": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000,
+          "default": 300,
+          "description": "Max detections collected per image."
+        },
+        "sampling_weights": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use 3LC sampling weights."
+        },
+        "exclude_zero_weight_training": {
+          "type": "boolean",
+          "default": false,
+          "description": "Exclude zero-weighted samples in training."
+        },
+        "exclude_zero_weight_collection": {
+          "type": "boolean",
+          "default": false,
+          "description": "Exclude zero-weighted samples in collection."
+        },
+        "collection_disable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Disable 3LC metrics collection entirely."
+        },
+        "collection_val_only": {
+          "type": "boolean",
+          "default": false,
+          "description": "Collect metrics only on the validation set (skip training set collection)."
+        },
+        "collection_epoch_start": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "description": "Start epoch for collection (empty = best epoch only)."
+            },
+            {
+              "const": ""
+            }
+          ],
+          "default": ""
+        },
+        "collection_epoch_interval": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 1,
+          "description": "Epoch interval for metrics collection."
+        },
+        "instance_embeddings_dim": {
+          "type": "string",
+          "enum": [
+            "0",
+            "2",
+            "3"
+          ],
+          "default": "2",
+          "description": "Per-instance embedding dimensionality (per bounding box)."
+        },
+        "instance_embeddings_reducer": {
+          "type": "string",
+          "enum": [
+            "umap",
+            "pacmap",
+            "pca"
+          ],
+          "default": "umap",
+          "description": "Reduction algorithm for per-instance embeddings. PCA allows arbitrary output dimensions."
+        },
+        "ground_truth_instance_embeddings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Collect instance embeddings for ground-truth annotations."
+        },
+        "workers": {
+          "type": "integer",
+          "default": 8
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "default": "yolov8"
+        },
+        "run_name": {
+          "type": "string",
+          "default": "",
+          "x-chat-approval-variable": true
+        },
+        "project_name": {
+          "type": "string",
+          "default": ""
+        },
+        "task_type": {
+          "type": "string",
+          "enum": [
+            "",
+            "detection",
+            "segmentation",
+            "classification",
+            "pose",
+            "obb"
+          ],
+          "default": ""
+        },
+        "train_table_url": {
+          "type": "string",
+          "minLength": 1,
+          "x-chat-approval-variable": true
+        },
+        "val_table_url": {
+          "type": "string",
+          "default": ""
+        },
+        "use_latest": {
+          "type": "boolean",
+          "default": false
+        },
+        "checkpoint_url": {
+          "type": "string",
+          "default": ""
+        },
+        "copy_model_to_run": {
+          "type": "boolean",
+          "default": false
+        },
+        "collect_loss": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "train_table_url",
+        "weights"
+      ]
+    },
+    "job": {
+      "body": {
+        "project_config": {
+          "params": {
+            "model": "{{weights}}",
+            "epochs": "{{epochs}}",
+            "batch": "{{batch}}",
+            "imgsz": "{{imgsz}}",
+            "lr0": "{{lr0}}",
+            "lrf": "{{lrf}}",
+            "optimizer": "{{optimizer}}",
+            "patience": "{{patience}}",
+            "device": "{{device}}",
+            "extra_args": "{{extra_args}}",
+            "label_column_name": "{{label_column_name}}",
+            "image_embeddings_dim": "{{image_embeddings_dim}}",
+            "image_embeddings_reducer": "{{image_embeddings_reducer}}",
+            "conf_thres": "{{conf_thres}}",
+            "max_det": "{{max_det}}",
+            "sampling_weights": "{{sampling_weights}}",
+            "exclude_zero_weight_training": "{{exclude_zero_weight_training}}",
+            "exclude_zero_weight_collection": "{{exclude_zero_weight_collection}}",
+            "collection_disable": "{{collection_disable}}",
+            "collection_val_only": "{{collection_val_only}}",
+            "collection_epoch_start": "{{collection_epoch_start}}",
+            "collection_epoch_interval": "{{collection_epoch_interval}}",
+            "instance_embeddings_dim": "{{instance_embeddings_dim}}",
+            "instance_embeddings_reducer": "{{instance_embeddings_reducer}}",
+            "ground_truth_instance_embeddings": "{{ground_truth_instance_embeddings}}",
+            "workers": "{{workers}}",
+            "pretrained_model_url": "{{checkpoint_url}}",
+            "copy_model_to_run": "{{copy_model_to_run}}",
+            "collect_loss": "{{collect_loss}}"
+          },
+          "model_name": "{{model}}",
+          "run_name": "{{run_name}}",
+          "project_name": "{{project_name}}",
+          "task_type": "{{task_type}}",
+          "train_table_url": "{{train_table_url}}",
+          "val_table_url": "{{val_table_url}}",
+          "use_latest": "{{use_latest}}",
+          "mode": "collect"
+        },
+        "project_name": "{{project_name}}"
+      },
+      "outputs": [
+        "run_url"
+      ],
+      "wait": false
+    }
+  },
+  {
+    "name": "form_from_run",
+    "title": "Reuse a YOLO run's settings",
+    "description": "Read the native saved form and exact MCP arguments for a run, without starting a job.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "run_url": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "run_url"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true
+    },
+    "route": {
+      "method": "GET",
+      "path": "/form-from-run",
+      "query": [
+        "run_url"
+      ]
+    }
+  }
+]

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4
+
+- Share native operation validation and MCP schema generation; add drift checks.
+- Separate maintained UI sources from packaged fragments without changing the layout.
+
 All notable changes to `3lc-compute-plugin-yolo` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -7,7 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Form fields and run-reuse metadata load without importing the training libraries. Model discovery is deferred until a training or collection job starts.
+
+- Reuse legacy runs through the read-only MCP `form_from_run` tool: compare installed YOLO defaults, map dedicated fields, and copy only nondefault custom training arguments. Worker counts use the existing dedicated control.
+
+### Added
+
+- **A run records the form it was started from.** The moment training starts, the run's parameters
+  get `3LC/form`: the page's form in the shape its `get_form` and `set_form` actions use, extra
+  arguments included, so the Hub assistant can start a later run with exactly the same settings.
+
 ### Fixed
+
+- Publish the actual 3LC run URL when training or collection starts, so Queue shows the real run
+  name and the Hub can display live progress in its run row, including when execution later fails.
 
 - **Table-read errors explain what failed and keep the backend cause visible.** The form explains
   that image aliases do not relocate table metadata or initialize storage access, and Start stays

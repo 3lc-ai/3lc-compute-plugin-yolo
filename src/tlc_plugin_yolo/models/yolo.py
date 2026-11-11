@@ -5,17 +5,21 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import traceback
 from pathlib import Path
-from typing import Any, ClassVar, Final
+from typing import Any, ClassVar
 
 import tlc
 from tlc_plugin_sdk.shared.url_utils import normalize_url
 from tlc_ultralytics import YOLO
 from tlc_ultralytics.settings import Settings
 
+from tlc_plugin_yolo.device import resolve_device
+from tlc_plugin_yolo.form_fields import yolo_fields
 from tlc_plugin_yolo.models import register_model
 from tlc_plugin_yolo.models.base import BaseTrainingModel, unsupported_param_ids
+from tlc_plugin_yolo.run_form import record_form
 
 
 def _set_root_url(settings_kwargs: dict[str, Any], params: dict[str, Any]) -> None:
@@ -36,13 +40,6 @@ _TASK_MAP = {
     "pose": "pose",
     "obb": "obb",
 }
-
-# Tasks whose heads emit per-instance regions (boxes, masks, keypoints). Instance
-# embeddings are pooled from a detection-style head's feature map, so the classify
-# task cannot produce them — asking for them made the integration raise mid-run.
-# Fields tagged with this list are hidden by the fragment and dropped from the params
-# of a config that predates the tag (or arrived straight from the API).
-_INSTANCE_TASKS: Final[list[str]] = ["detection", "segmentation", "pose", "obb"]
 
 
 def _drop_unsupported(
@@ -70,302 +67,13 @@ class YOLOModel(BaseTrainingModel):
     supported_tasks: ClassVar[list[str]] = ["detection", "segmentation", "pose", "obb", "classification"]
 
     def get_params(self) -> list[dict[str, Any]]:
-        """Return YOLO parameter field definitions."""
-        return [
-            # ── YOLO Settings ──
-            {
-                "id": "model",
-                "label": "Checkpoint",
-                "type": "select",
-                "default": "yolov8n.pt",
-                "options": [
-                    # Detection
-                    {"value": "yolov5nu.pt", "label": "YOLOv5n (nano)", "task": "detection"},
-                    {"value": "yolov5su.pt", "label": "YOLOv5s (small)", "task": "detection"},
-                    {"value": "yolov5mu.pt", "label": "YOLOv5m (medium)", "task": "detection"},
-                    {"value": "yolov5lu.pt", "label": "YOLOv5l (large)", "task": "detection"},
-                    {"value": "yolov5xu.pt", "label": "YOLOv5x (extra-large)", "task": "detection"},
-                    {"value": "yolov8n.pt", "label": "YOLOv8n (nano)", "task": "detection"},
-                    {"value": "yolov8s.pt", "label": "YOLOv8s (small)", "task": "detection"},
-                    {"value": "yolov8m.pt", "label": "YOLOv8m (medium)", "task": "detection"},
-                    {"value": "yolov8l.pt", "label": "YOLOv8l (large)", "task": "detection"},
-                    {"value": "yolov8x.pt", "label": "YOLOv8x (extra-large)", "task": "detection"},
-                    {"value": "yolo11n.pt", "label": "YOLO11n (nano)", "task": "detection"},
-                    {"value": "yolo11s.pt", "label": "YOLO11s (small)", "task": "detection"},
-                    {"value": "yolo11m.pt", "label": "YOLO11m (medium)", "task": "detection"},
-                    {"value": "yolo11l.pt", "label": "YOLO11l (large)", "task": "detection"},
-                    {"value": "yolo11x.pt", "label": "YOLO11x (extra-large)", "task": "detection"},
-                    # Segmentation
-                    {"value": "yolov8n-seg.pt", "label": "YOLOv8n-seg (nano)", "task": "segmentation"},
-                    {"value": "yolov8s-seg.pt", "label": "YOLOv8s-seg (small)", "task": "segmentation"},
-                    {"value": "yolov8m-seg.pt", "label": "YOLOv8m-seg (medium)", "task": "segmentation"},
-                    {"value": "yolov8l-seg.pt", "label": "YOLOv8l-seg (large)", "task": "segmentation"},
-                    {"value": "yolov8x-seg.pt", "label": "YOLOv8x-seg (extra-large)", "task": "segmentation"},
-                    {"value": "yolo11n-seg.pt", "label": "YOLO11n-seg (nano)", "task": "segmentation"},
-                    {"value": "yolo11s-seg.pt", "label": "YOLO11s-seg (small)", "task": "segmentation"},
-                    {"value": "yolo11m-seg.pt", "label": "YOLO11m-seg (medium)", "task": "segmentation"},
-                    {"value": "yolo11l-seg.pt", "label": "YOLO11l-seg (large)", "task": "segmentation"},
-                    {"value": "yolo11x-seg.pt", "label": "YOLO11x-seg (extra-large)", "task": "segmentation"},
-                    # Classification
-                    {"value": "yolov8n-cls.pt", "label": "YOLOv8n-cls (nano)", "task": "classification"},
-                    {"value": "yolov8s-cls.pt", "label": "YOLOv8s-cls (small)", "task": "classification"},
-                    {"value": "yolov8m-cls.pt", "label": "YOLOv8m-cls (medium)", "task": "classification"},
-                    {"value": "yolov8l-cls.pt", "label": "YOLOv8l-cls (large)", "task": "classification"},
-                    {"value": "yolov8x-cls.pt", "label": "YOLOv8x-cls (extra-large)", "task": "classification"},
-                    {"value": "yolo11n-cls.pt", "label": "YOLO11n-cls (nano)", "task": "classification"},
-                    {"value": "yolo11s-cls.pt", "label": "YOLO11s-cls (small)", "task": "classification"},
-                    {"value": "yolo11m-cls.pt", "label": "YOLO11m-cls (medium)", "task": "classification"},
-                    {"value": "yolo11l-cls.pt", "label": "YOLO11l-cls (large)", "task": "classification"},
-                    {"value": "yolo11x-cls.pt", "label": "YOLO11x-cls (extra-large)", "task": "classification"},
-                ],
-                "help": "Pre-trained model checkpoint.",
-                "group": "YOLO Settings",
-            },
-            {
-                "id": "epochs",
-                "label": "Epochs",
-                "type": "number",
-                "default": 50,
-                "min": 1,
-                "max": 1000,
-                "step": 1,
-                "group": "YOLO Settings",
-            },
-            {
-                "id": "batch",
-                "label": "Batch Size",
-                "type": "number",
-                "default": 16,
-                "min": 1,
-                "max": 512,
-                "step": 1,
-                "group": "YOLO Settings",
-            },
-            {
-                "id": "imgsz",
-                "label": "Image Size",
-                "type": "number",
-                "default": 640,
-                "min": 32,
-                "max": 1280,
-                "step": 32,
-                "group": "YOLO Settings",
-            },
-            {
-                "id": "lr0",
-                "label": "Initial LR",
-                "type": "number",
-                "default": 0.01,
-                "min": 0.0001,
-                "max": 1.0,
-                "step": 0.001,
-                "group": "YOLO Settings",
-            },
-            {
-                "id": "lrf",
-                "label": "Final LR Factor",
-                "type": "number",
-                "default": 0.01,
-                "min": 0.0001,
-                "max": 1.0,
-                "step": 0.001,
-                "help": "Final LR = lr0 * lrf.",
-                "group": "YOLO Settings",
-            },
-            {
-                "id": "optimizer",
-                "label": "Optimizer",
-                "type": "select",
-                "default": "auto",
-                "options": [
-                    {"value": "auto", "label": "Auto"},
-                    {"value": "SGD", "label": "SGD"},
-                    {"value": "Adam", "label": "Adam"},
-                    {"value": "AdamW", "label": "AdamW"},
-                ],
-                "group": "YOLO Settings",
-            },
-            {
-                "id": "patience",
-                "label": "Patience",
-                "type": "number",
-                "default": 50,
-                "min": 0,
-                "max": 500,
-                "step": 1,
-                "help": "Early stopping patience (0 = disabled).",
-                "group": "YOLO Settings",
-            },
-            {
-                "id": "device",
-                "label": "Device",
-                "type": "text",
-                "default": "",
-                "help": "'' (auto), 'cpu', '0', '0,1', etc.",
-                "group": "YOLO Settings",
-            },
-            {
-                "id": "extra_args",
-                "label": "Extra Arguments",
-                "type": "text",
-                "default": "",
-                "help": "Additional YOLO args as key=value pairs, e.g. cos_lr=True weight_decay=0.001 warmup_epochs=5",
-                "group": "YOLO Settings",
-                "wide": True,
-            },
-            # ── 3LC Settings ──
-            {
-                "id": "image_embeddings_dim",
-                "label": "Embeddings Dim",
-                "type": "select",
-                "default": "2",
-                "options": [
-                    {"value": "0", "label": "Disabled"},
-                    {"value": "2", "label": "2D"},
-                    {"value": "3", "label": "3D"},
-                ],
-                "help": "Image embedding dimensionality.",
-                "group": "3LC Settings",
-            },
-            {
-                "id": "image_embeddings_reducer",
-                "label": "Embeddings Reducer",
-                "type": "select",
-                "default": "umap",
-                "options": [
-                    {"value": "umap", "label": "UMAP"},
-                    {"value": "pacmap", "label": "PaCMAP"},
-                ],
-                "help": "Reduction algorithm for image embeddings.",
-                "group": "3LC Settings",
-            },
-            {
-                "id": "conf_thres",
-                "label": "Conf Threshold",
-                "type": "number",
-                "default": 0.1,
-                "min": 0.01,
-                "max": 1.0,
-                "step": 0.01,
-                "help": "Confidence threshold for detections.",
-                "group": "3LC Settings",
-            },
-            {
-                "id": "max_det",
-                "label": "Max Detections",
-                "type": "number",
-                "default": 300,
-                "min": 1,
-                "max": 2000,
-                "step": 1,
-                "help": "Max detections collected per image.",
-                "group": "3LC Settings",
-            },
-            {
-                "id": "sampling_weights",
-                "label": "Sampling Weights",
-                "type": "checkbox",
-                "default": False,
-                "help": "Use 3LC sampling weights.",
-                "group": "3LC Settings",
-            },
-            {
-                "id": "exclude_zero_weight_training",
-                "label": "Exclude Zero (Train)",
-                "type": "checkbox",
-                "default": False,
-                "help": "Exclude zero-weighted samples in training.",
-                "group": "3LC Settings",
-            },
-            {
-                "id": "exclude_zero_weight_collection",
-                "label": "Exclude Zero (Collect)",
-                "type": "checkbox",
-                "default": False,
-                "help": "Exclude zero-weighted samples in collection.",
-                "group": "3LC Settings",
-            },
-            {
-                "id": "collection_disable",
-                "label": "Disable Collection",
-                "type": "checkbox",
-                "default": False,
-                "help": "Disable 3LC metrics collection entirely.",
-                "group": "3LC Settings",
-            },
-            {
-                "id": "collection_val_only",
-                "label": "Collect Val Only",
-                "type": "checkbox",
-                "default": False,
-                "help": "Collect metrics only on the validation set (skip training set collection).",
-                "group": "3LC Settings",
-            },
-            {
-                "id": "collection_epoch_start",
-                "label": "Collection Start Epoch",
-                "type": "number",
-                "default": "",
-                "min": 1,
-                "max": 1000,
-                "step": 1,
-                "help": "Start epoch for collection (empty = best epoch only).",
-                "group": "3LC Settings",
-            },
-            {
-                "id": "collection_epoch_interval",
-                "label": "Collection Interval",
-                "type": "number",
-                "default": 1,
-                "min": 1,
-                "max": 100,
-                "step": 1,
-                "help": "Epoch interval for metrics collection.",
-                "group": "3LC Settings",
-            },
-            {
-                "id": "instance_embeddings_dim",
-                "label": "Instance Embeddings Dim",
-                "type": "select",
-                "default": "2",
-                "options": [
-                    {"value": "0", "label": "Disabled"},
-                    {"value": "2", "label": "2D"},
-                    {"value": "3", "label": "3D"},
-                ],
-                "help": "Per-instance embedding dimensionality (per bounding box).",
-                "group": "3LC Settings",
-                "tasks": _INSTANCE_TASKS,
-            },
-            {
-                "id": "instance_embeddings_reducer",
-                "label": "Instance Embeddings Reducer",
-                "type": "select",
-                "default": "umap",
-                "options": [
-                    {"value": "umap", "label": "UMAP"},
-                    {"value": "pacmap", "label": "PaCMAP"},
-                    {"value": "pca", "label": "PCA"},
-                ],
-                "help": "Reduction algorithm for per-instance embeddings. PCA allows arbitrary output dimensions.",
-                "group": "3LC Settings",
-                "tasks": _INSTANCE_TASKS,
-            },
-            {
-                "id": "ground_truth_instance_embeddings",
-                "label": "GT Instance Embeddings",
-                "type": "checkbox",
-                "default": True,
-                "help": "Collect instance embeddings for ground-truth annotations.",
-                "group": "3LC Settings",
-                "tasks": _INSTANCE_TASKS,
-            },
-        ]
+        return yolo_fields()
 
     def train(self, tables: dict[str, Any], params: dict[str, Any], callbacks: dict[str, Any]) -> dict[str, Any]:
         """Run YOLO training with 3LC integration."""
         on_epoch = callbacks.get("on_epoch", lambda *a: None)
         on_status = callbacks.get("on_status", lambda m: None)
+        on_run = callbacks.get("on_run", lambda url: None)
         is_cancelled = callbacks.get("is_cancelled", lambda: False)
 
         params = _drop_unsupported(self.get_params(), params, params.get("_task_type", ""), on_status)
@@ -393,7 +101,11 @@ class YOLOModel(BaseTrainingModel):
                 k = k.strip()
                 if not k:
                     continue
-                if v.lower() in ("true", "false"):
+                # Run settings exported by Ultralytics include optional values such as
+                # cfg=None. Passing the text "None" makes it try to open a YAML file.
+                if v.lower() == "none":
+                    extra_kwargs[k] = None
+                elif v.lower() in ("true", "false"):
                     extra_kwargs[k] = v.lower() == "true"
                 else:
                     try:
@@ -402,7 +114,10 @@ class YOLOModel(BaseTrainingModel):
                         try:
                             extra_kwargs[k] = float(v)
                         except ValueError:
-                            extra_kwargs[k] = v
+                            try:
+                                extra_kwargs[k] = json.loads(v)
+                            except ValueError:
+                                extra_kwargs[k] = v
             if extra_kwargs:
                 on_status(f"Extra YOLO args: {extra_kwargs}")
 
@@ -426,6 +141,10 @@ class YOLOModel(BaseTrainingModel):
         if project_name:
             settings_kwargs["project_name"] = project_name
         settings_kwargs["run_name"] = run_name
+
+        label_column = str(params.get("label_column_name") or "").strip()
+        if label_column:
+            settings_kwargs["label_column_name"] = label_column
 
         settings_kwargs["image_embeddings_dim"] = int(params.get("image_embeddings_dim", 0))
         settings_kwargs["image_embeddings_reducer"] = params.get("image_embeddings_reducer", "umap")
@@ -503,8 +222,11 @@ class YOLOModel(BaseTrainingModel):
 
         def _on_train_start(trainer: Any) -> None:
             # Capture the 3LC run reference as soon as training starts
-            if hasattr(trainer, "_run"):
-                _state["tlc_run"] = trainer._run
+            run = getattr(trainer, "_run", None)
+            if run is not None:
+                _state["tlc_run"] = run
+                on_run(str(run.url))
+                record_form(run, params, on_status)
 
         def _on_train_epoch_end(trainer: Any) -> None:
             if is_cancelled():
@@ -579,6 +301,9 @@ class YOLOModel(BaseTrainingModel):
                 "settings": settings,
                 **extra_kwargs,
             }
+            # Resolve after extra_args, so an explicit device there is respected too.
+            train_kwargs["device"] = resolve_device(train_kwargs.get("device"))
+            on_status(f"Training device: {train_kwargs['device'] or 'auto (CUDA/CPU)'}")
             if skip_val:
                 train_kwargs["val"] = False
             results = model.train(**train_kwargs)
@@ -650,6 +375,7 @@ class YOLOModel(BaseTrainingModel):
     def collect(self, tables: dict[str, Any], params: dict[str, Any], callbacks: dict[str, Any]) -> dict[str, Any]:
         """Run metrics collection only (no training)."""
         on_status = callbacks.get("on_status", lambda m: None)
+        on_run = callbacks.get("on_run", lambda url: None)
         on_epoch = callbacks.get("on_epoch", lambda *a: None)
         is_cancelled = callbacks.get("is_cancelled", lambda: False)
 
@@ -671,6 +397,10 @@ class YOLOModel(BaseTrainingModel):
             settings_kwargs["project_name"] = project_name
         if run_name:
             settings_kwargs["run_name"] = run_name
+
+        label_column = str(params.get("label_column_name") or "").strip()
+        if label_column:
+            settings_kwargs["label_column_name"] = label_column
 
         settings_kwargs["image_embeddings_dim"] = int(params.get("image_embeddings_dim", 0))
         settings_kwargs["image_embeddings_reducer"] = params.get("image_embeddings_reducer", "umap")
@@ -769,6 +499,9 @@ class YOLOModel(BaseTrainingModel):
         _collect_state: dict[str, Any] = {"split": "", "nb": 0}
 
         def _on_val_start(validator: Any) -> None:
+            run = getattr(validator, "_run", None)
+            if run is not None:
+                on_run(str(run.url))
             split = getattr(validator, "_current_split", None) or ""
             _collect_state["split"] = split
             dl = getattr(validator, "dataloader", None)
@@ -806,7 +539,7 @@ class YOLOModel(BaseTrainingModel):
                 settings=settings,
                 batch=batch,
                 imgsz=imgsz,
-                device=device,
+                device=resolve_device(device),
                 progress_callback=_reduction_progress,
             )
 

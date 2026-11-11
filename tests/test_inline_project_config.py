@@ -43,3 +43,11 @@ def test_non_dict_and_empty_resolve_to_none() -> None:
     assert _project_from_inline("", log=_log) is None
     assert _project_from_inline({}, log=_log) is None
     assert _project_from_inline(["not", "a", "dict"], log=_log) is None
+
+
+def test_omitted_family_uses_ultralytics_without_changing_selected_weights() -> None:
+    project = _project_from_inline(
+        {"train_table_url": "s3://bucket/train", "params": {"model": "yolov8n-seg.pt"}}, log=_log
+    )
+    assert project.model_name == "yolov8"
+    assert project.params["model"] == "yolov8n-seg.pt"

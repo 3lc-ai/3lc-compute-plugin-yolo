@@ -166,3 +166,47 @@ test("a successful model list clears a previous discovery failure", async () => 
   assert.equal(context.trStartBlocker(), "");
   assert.equal(getElement("tr-train-btn").disabled, false);
 });
+
+
+test("opening from a run never places the run URL in the training table", () => {
+  const context = {URLSearchParams, window: {location: {search: '?run=run-url'}},
+    PLUGIN_API: {context: {resourceType: 'run', resourceUrls: ['run-url']}}};
+  vm.createContext(context);
+  vm.runInContext(sliceBetween('function trContextInputs()', 'function trModelLabel'), context);
+  assert.equal(context.trContextInputs(), null);
+  context.PLUGIN_API.context.resourceType = 'table';
+  assert.equal(context.trContextInputs().train_table_url, 'run-url');
+  context.window.location.search = '?train=original-train&val=original-val';
+  context.PLUGIN_API.context.resourceType = 'run';
+  assert.equal(context.trContextInputs().train_table_url, 'original-train');
+});
+
+test("applying a training setup fills checkpoint, sampling weights, inputs and parameters before resolving", async () => {
+  const fields = new Map();
+  const field = id => { if (!fields.has(id)) fields.set(id, {value: '', checked: false}); return fields.get(id); };
+  let rendered = false, params = {};
+  const context = {
+    document: {getElementById: field},
+    trSetMode: mode => {context.currentMode = mode;}, trCheckTableAgainstRunTarget() {}, trShowTask() {},
+    trDetectTask: async () => {context.detectedTask = 'detection';},
+    trPopulateModelDropdown: (task, ready, model) => {field('tr-model-select').value = model; ready();},
+    trLoadModelParams: async (model, values) => {await Promise.resolve(); params = values; rendered = true;},
+    trGate: () => {assert.ok(rendered);},
+  };
+  vm.createContext(context);
+  vm.runInContext(sliceBetween('function trApplyFormData(values)', 'function trInitPresets()'), context);
+  await context.trApplyFormData({model_name: 'yolov8', mode: 'train', project_name: 'Fire',
+    train_table_url: 'original-train', val_table_url: 'original-val', params: {
+      model: 'yolov8n.pt', epochs: 30, batch: 16, imgsz: 640, sampling_weights: true,
+      pretrained_model_url: 'checkpoint.pt', workers: 0,
+    }});
+  assert.equal(field('tr-model-select').value, 'yolov8');
+  assert.equal(field('tr-pretrained-url').value, 'checkpoint.pt');
+  assert.equal(field('tr-train-url').value, 'original-train');
+  assert.equal(field('tr-val-url').value, 'original-val');
+  assert.equal(field('tr-3lc-project').value, 'Fire');
+  assert.equal(field('tr-workers').value, 0);
+  assert.equal(params.model, 'yolov8n.pt');
+  assert.equal(params.sampling_weights, true);
+  assert.equal(params.epochs, 30);
+});

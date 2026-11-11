@@ -489,8 +489,10 @@ function trGate() {
   var btn = document.getElementById("tr-train-btn");
   var reason = trStartBlocker();
   btn.disabled = _trSubmitting || !!reason;
+  btn.textContent = _trSubmitting ? "Preparing job…" : trStartLabel();
   btn.title = reason;
-  document.getElementById("tr-train-why").textContent = reason;  // the line keeps its height when empty
+  document.getElementById("tr-train-why").textContent = _trSubmitting
+    ? "Checking data access and submitting the current settings…" : reason;
   var swap = document.getElementById("tr-swap-btn");
   var noTables = !trTableUrl("tr-train-url") && !trTableUrl("tr-val-url");
   swap.disabled = noTables;
@@ -554,6 +556,7 @@ function trContextInputs() {
   if (q.has("train") || q.has("val")) {
     return { train_table_url: q.get("train") || "", val_table_url: q.get("val") || "" };
   }
+  if (ctx.resourceType === "run") return null; // A run is not a table; the assistant fills its input tables.
   if (urls.length) return { train_table_url: urls[0], val_table_url: urls[1] || "" };
   return null;
 }

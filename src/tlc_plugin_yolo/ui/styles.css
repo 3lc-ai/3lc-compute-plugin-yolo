@@ -1,0 +1,28 @@
+
+/* ── YOLO-specific styles ── */
+/* Uses shared classes from plugin-common.css: plugin-dot, plugin-task-badge,
+   plugin-param-group, plugin-queue-item, plugin-mono, etc. */
+
+/* Metrics container */
+.tr-metrics { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+
+/* Log area override: fixed height */
+.tr-log-area { height: 140px; max-height: none; }
+.tr-log-area div { padding: 1px 0; }
+
+/* Queue status badge */
+.tr-queue-status { font-size: 9px; font-weight: 600; letter-spacing: 0.3px; padding: 1px 7px; border-radius: 3px; }
+
+/* Queue job info */
+.tr-job-info { font-size: 9px; color: var(--text-muted); }
+
+/* License notice — always visible at the top of the fragment */
+.yolo-license-note {
+  display: flex; align-items: flex-start; gap: 9px;
+  margin-bottom: 12px; padding: 9px 14px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 8px);
+  font-size: 11px; color: var(--text-muted); line-height: 1.55;
+}
+.yolo-license-note svg { flex-shrink: 0; margin-top: 1px; opacity: 0.7; }
+.yolo-license-note a { color: var(--accent); }

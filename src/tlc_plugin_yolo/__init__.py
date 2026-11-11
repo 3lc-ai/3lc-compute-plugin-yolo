@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from tlc_plugin_sdk import ComputePlugin
 
 from tlc_plugin_yolo import routes as _routes
+from tlc_plugin_yolo.run_form import form_of
 
 if TYPE_CHECKING:
     from tlc_plugin_sdk.job_context import JobContext
@@ -65,7 +66,7 @@ class YoloPlugin(ComputePlugin):
     _ui_cache: str | None = None
 
     def initialise_runtime(self) -> None:
-        """Discover models and create the ProjectStore (job execution is host-managed)."""
+        """Create the preset store; model imports happen only for a training/collection job."""
         from tlc_plugin_yolo.runtime import initialise
 
         initialise()
@@ -128,11 +129,24 @@ class YoloPlugin(ComputePlugin):
         # self-contained (SDK guide, "Run-body conventions for remote workers"). The
         # store lookup stays as the fallback for older fragments / direct API calls.
         project = _project_from_inline(params_in.get("project_config"), log=ctx.log)
+        if "project_config" in params_in and project is None:
+            ctx.fail("Invalid project_config; choose a valid configuration")
         store = get_store()
         if project is None and project_id and store:
             project = store.get_project(project_id)
         if project is None:
             ctx.fail("Project not found" if project_id else "project_config is required")
+
+        from tlc_plugin_yolo.job_contract import contract
+        from tlc_plugin_yolo.project_store import TrainingProject
+
+        try:
+            native_config = dataclasses.asdict(project)
+            # Applied by the SDK worker around run_job; never a trainer option.
+            native_config["params"].pop("_alias_overrides", None)
+            project = TrainingProject(**contract().normalize(native_config))
+        except ValueError as error:
+            ctx.fail(str(error))
 
         # Look up the model in the registry (populated by discover_models()). An empty registry
         # is a discovery failure, and the job says why rather than "not found".
@@ -186,6 +200,8 @@ class YoloPlugin(ComputePlugin):
         root = ctx.project_root_url
         if root:
             params["_project_root_url"] = root
+        # The form this run starts from, recorded on the run so a later run can take the same settings.
+        params["_form"] = form_of(project, mode)
 
         # ── Timing bookkeeping (lifted from the old runner) ──
         _last_metrics: dict[str, Any] = {}
@@ -272,17 +288,17 @@ class YoloPlugin(ComputePlugin):
                     timing=generic.get("timing"),
                 )
 
+        def on_run(run_url: str) -> None:
+            # Publish the canonical identity immediately, while the job is still running.
+            _run_state["run_url"] = run_url
+            _run_state["tlc_run_name"] = run_url.rstrip("/").rsplit("/", 1)[-1]
+            ctx.result(run_url)
+
         def on_status(message: str) -> None:
             ctx.log(message)
-            # Lift the run-URL / run-name parsing the old runner did on on_status.
+            # Keep older model adapters compatible; current adapters use on_run directly.
             if message.startswith("Created 3LC Run: "):
-                run_path = message[len("Created 3LC Run: ") :]
-                _run_state["run_url"] = run_path
-                if not _run_state["tlc_run_name"]:
-                    _run_state["tlc_run_name"] = run_path.rstrip("/").split("/")[-1]
-                # Publish the run link the moment the run exists, so the Queue's Open
-                # link (and delete-after-stop) work mid-training, not just at the end.
-                ctx.result(run_path)
+                on_run(message[len("Created 3LC Run: ") :])
             elif message.startswith("Run name: "):
                 _run_state["tlc_run_name"] = message[len("Run name: ") :]
             ctx.emit("job_status", {"job_id": ctx.job_id, "status": "running", "message": message})
@@ -292,6 +308,7 @@ class YoloPlugin(ComputePlugin):
 
         callbacks = {
             "on_epoch": on_epoch,
+            "on_run": on_run,
             "on_status": on_status,
             "is_cancelled": is_cancelled,
         }

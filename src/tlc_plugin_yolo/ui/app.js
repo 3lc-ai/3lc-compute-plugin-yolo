@@ -1,0 +1,1470 @@
+
+// Training — SocketIO handlers, form logic, project management
+// Communicates with Compute Service for all API + SocketIO
+
+// ── State ─────────────────────────────────────────────────────
+var modelsCache = null;       // [{name, display_name, supported_tasks}]
+var modelParamsCache = {};    // {modelName: [field, ...]}
+var detectedTask = null;
+var _currentJobId = null;
+var currentMode = "train";    // "train" or "collect"
+var trPresets = null;         // the SDK's preset bar (_tlcPluginPresets), once mounted
+var trDetecting = false;      // the train table is being read (from the change, through the debounce)
+var trTaskError = "";         // why the train table could not be read; "" when it was, or is not yet
+var trModelsState = "loading"; // the model list: "loading", "ready" or "failed"
+var trModelDiscoveryError = ""; // why the worker could not initialize the model registry
+var trModelDiscoveryHint = "";
+var _trSubmitting = false;    // Start was pressed and the run request has not answered yet
+
+var _STORAGE_KEY = "yolo_selected_project";  // the old config bar's key; the preset bar honours it once
+
+// Compute Service URL from PLUGIN_API bridge
+var COMPUTE_URL = PLUGIN_API.getConfig("compute_service_url");
+
+// ── Helpers ───────────────────────────────────────────────────
+function _trFetch(path, opts) {
+  return PLUGIN_API.authFetch(COMPUTE_URL + path, opts);
+}
+
+function _trFetchJson(path, opts) {
+  return _trFetch(path, opts).then(function(r) { return r.json(); });
+}
+
+function _trPost(path, body) {
+  return _trFetchJson(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// ── SocketIO Connection ──────────────────────────────────────
+// One socket on the plugin's namespace, owned by the SDK's PluginJobs client (the
+// host injects it into every fragment). The plugin's own custom events
+// (epoch_progress / job_status) and the generic job_update channel (completion,
+// failure, cancellation — see trTrackJob) share it, so it is connected from mount
+// and a job that fails right after submit cannot slip past a still-connecting socket.
+var _YOLO_NS = "/yolo";
+
+function trInitSocket() {
+  if (typeof PluginJobs === "undefined" || !PLUGIN_API.libs.io) {
+    trLog("SocketIO not available — real-time updates disabled.");
+    return;
+  }
+
+  PluginJobs.on(_YOLO_NS, "connect", function() {
+    trLog("Connected to Compute Service");
+  });
+
+  PluginJobs.on(_YOLO_NS, "disconnect", function() {
+    trLog("Disconnected from Compute Service");
+  });
+
+  // Progress events
+  PluginJobs.on(_YOLO_NS, "epoch_progress", function(data) {
+    if (!trShowCurrentJob(data.job_id)) return;
+    var m = data.metrics || {};
+    var batch = m.batch || 0;
+    var totalBatches = m.total_batches || 0;
+    var phase = m.phase || "";
+    var timing = data.timing || {};
+
+    var overallPct, label;
+    if (phase === "collect") {
+      overallPct = totalBatches > 0 ? (batch / totalBatches) * 100 : 0;
+      label = batch && totalBatches ? "Collecting " + batch + "/" + totalBatches : "Collecting...";
+    } else {
+      var epochFraction = totalBatches > 0 ? (batch / totalBatches) : 1;
+      overallPct = ((data.epoch - 1 + epochFraction) / data.total_epochs) * 100;
+      if (batch && totalBatches && phase) {
+        var phaseLabel = phase === "val" ? "Val" : "Train";
+        label = "Epoch " + data.epoch + "/" + data.total_epochs + " · " + phaseLabel + " batch " + batch + "/" + totalBatches;
+      } else {
+        label = "Epoch " + data.epoch + "/" + data.total_epochs;
+      }
+    }
+    overallPct = Math.max(0, Math.min(overallPct, 100));
+    document.getElementById("tr-epoch-bar").style.width = overallPct.toFixed(1) + "%";
+    document.getElementById("tr-pct-label").textContent = Math.round(overallPct) + "%";
+    document.getElementById("tr-epoch-label").textContent = label;
+
+    // Timing info
+    var parts = [];
+    if (timing.elapsed_s !== undefined) parts.push("Elapsed: " + _trFmtDuration(timing.elapsed_s));
+    if (timing.eta_s !== undefined) parts.push("ETA: " + _trFmtDuration(timing.eta_s));
+    if (timing.avg_epoch_s !== undefined) parts.push("Per epoch: " + _trFmtDuration(timing.avg_epoch_s));
+    document.getElementById("tr-timing").innerHTML = parts.join(' &nbsp;|&nbsp; ');
+
+    trRenderMetrics(m);
+  });
+
+  PluginJobs.on(_YOLO_NS, "job_status", function(data) {
+    if (!trShowCurrentJob(data.job_id)) return;
+    trLog("[" + data.job_id.slice(0, 8) + "] " + data.status + ": " + data.message);
+  });
+
+  PluginJobs.on(_YOLO_NS, "queue_update", function(data) {
+    trRenderQueue(data);
+  });
+}
+
+// ── Generic job channel ─────────────────────────────────────
+// Completion, failure and cancellation ride the host's generic job_update channel —
+// the same record the Queue & Progress panel renders (`run_url`, `error`,
+// `project_name`). The plugin emits no terminal events of its own.
+var _trUntrack = null;
+var _trTrackedJobId = null;
+var _trFinishedJobs = [];
+
+function trTrackJob(jobId) {
+  if (typeof PluginJobs === "undefined" || _trTrackedJobId === jobId) return;
+  if (_trUntrack) _trUntrack();
+  _trTrackedJobId = jobId;
+  _trUntrack = PluginJobs.track(_YOLO_NS, jobId, {
+    onUpdate: function(job) {
+      if (job.id !== _currentJobId) return;
+      var progress = job.progress || {};
+      if (progress.label) document.getElementById("tr-epoch-label").textContent = progress.label;
+      if (typeof progress.percent === "number") {
+        var percent = Math.max(0, Math.min(100, progress.percent));
+        document.getElementById("tr-epoch-bar").style.width = percent + "%";
+        document.getElementById("tr-pct-label").textContent = Math.round(percent) + "%";
+      }
+    },
+    onDone: function(job) {
+      _trUntrack = null;
+      _trTrackedJobId = null;
+      if (job.status === "cancelled") {
+        trLog("Job cancelled.");
+        trFinishCurrentJob("cancelled", job);
+        return;
+      }
+      trLog("Job completed! Run: " + (job.run_url || "(no run)"));
+      trFinishCurrentJob("completed", job);
+    },
+    onError: function(job) {
+      _trUntrack = null;
+      _trTrackedJobId = null;
+      trLog("Job FAILED: " + (job.error || job.subtitle || "unknown error"));
+      trFinishCurrentJob("failed", job);
+    }
+  });
+}
+
+// ── Seed on mount ────────────────────────────────────────────
+// The fragment is torn down on navigation and job_update is live-only, so a YOLO
+// job already queued/running when the page mounts has no live event to catch until
+// it next progresses. Ask the host for its durable job list and show a compact
+// running state (the Queue & Progress panel is where the job is watched) instead of
+// the empty "No active job." panel; live epoch updates then resume as they arrive.
+function trSeedFromHost() {
+  if (typeof PluginJobs === "undefined" || !PluginJobs.list) return;
+  PluginJobs.list("yolo").then(function(jobs) {
+    var live = jobs.filter(function(j) { return j.status === "queued" || j.status === "running"; });
+    if (!live.length) return;
+    var job = live[0];
+    if (!trShowCurrentJob(job.id, job.title || "YOLO job")) return;
+    var statusEl = document.getElementById("tr-current-status");
+    statusEl.textContent = job.status;
+    statusEl.className = "tr-queue-status plugin-status-" + job.status;
+    var p = job.progress || {};
+    if (typeof p.percent === "number" && p.percent >= 0) {
+      document.getElementById("tr-epoch-bar").style.width = p.percent.toFixed(1) + "%";
+      document.getElementById("tr-pct-label").textContent = Math.round(p.percent) + "%";
+    }
+    if (p.label) document.getElementById("tr-epoch-label").textContent = p.label;
+    document.getElementById("tr-current-info").textContent =
+      "Job in progress — watch it in the Queue & Progress panel.";
+    trLog("Resumed tracking of " + job.status + " job " + String(job.id).slice(0, 8));
+    trTrackJob(job.id);
+  }).catch(function(e) {
+    trLog("Could not read the host job list: " + String(e));
+  });
+}
+
+// ── Logging ──────────────────────────────────────────────────
+function trLog(msg) {
+  var el = document.getElementById("tr-log");
+  if (!el) return;
+  var line = document.createElement("div");
+  line.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── Save bar (dirty tracking) ───────────────────────────────
+// ── Presets ──────────────────────────────────────────────────
+// The SDK's preset bar owns the saved setups (SDK guide → Presets). The form's handlers call this
+// after a change the page's input/change events do not carry, so the bar can compare the form and
+// Start follows it.
+function trScheduleAutoSave() {
+  if (trPresets) trPresets.changed();
+  trGate();
+  trScheduleImageCopyCheck();
+}
+
+// ── Start: disabled until it can run, saying why (PBI 19074) ──
+// Start's label follows the mode; the reasons name it as the button shows it.
+function trStartLabel() {
+  return currentMode === "collect" ? "Start Collection" : "Start Ultralytics YOLO Training";
+}
+
+// A table field's URL, trimmed.
+function trTableUrl(id) {
+  return String(document.getElementById(id).value || "").trim();
+}
+
+// Why Start cannot run yet, as what to do to enable it; "" when it can.
+function trStartBlocker() {
+  var label = trStartLabel();
+  if (!trTableUrl("tr-train-url")) return "Choose a train table to enable " + label + ".";
+  if (trDetecting) return "Wait while the train table is read to enable " + label + ".";
+  if (trTaskError) return "Cannot start " + label + ": " + trTaskError;
+  if (trModelsState === "loading") return "Wait while the models load to enable " + label + ".";
+  if (!modelsCache || !modelsCache.length) {
+    var modelFailure = trModelDiscoveryError ? ": " + trModelDiscoveryError : ".";
+    var modelHint = trModelDiscoveryHint ? " " + trModelDiscoveryHint : "";
+    return "Cannot start " + label + ": no models could be loaded" + modelFailure + modelHint;
+  }
+  if (!document.getElementById("tr-model-select").value) return "Choose a model to enable " + label + ".";
+  if (typeof PluginJobs === "undefined") return "Reload the page to enable " + label + ".";
+  return "";
+}
+
+// Start, disabled while it cannot run, with the reason in its tooltip and on the line under it;
+// Swap, disabled while both table fields are empty, with the reason in its tooltip.
+function trGate() {
+  var btn = document.getElementById("tr-train-btn");
+  var reason = trStartBlocker();
+  btn.disabled = _trSubmitting || !!reason;
+  btn.textContent = _trSubmitting ? "Preparing job…" : trStartLabel();
+  btn.title = reason;
+  document.getElementById("tr-train-why").textContent = _trSubmitting
+    ? "Checking data access and submitting the current settings…" : reason;
+  var swap = document.getElementById("tr-swap-btn");
+  var noTables = !trTableUrl("tr-train-url") && !trTableUrl("tr-val-url");
+  swap.disabled = noTables;
+  swap.title = noTables ? "Nothing to swap: both table fields are empty." : swap.dataset.title;
+}
+
+// ── Mode Toggle ─────────────────────────────────────────────
+function trSetMode(mode) {
+  currentMode = mode;
+  var trainBtn = document.getElementById("tr-mode-train");
+  var collectBtn = document.getElementById("tr-mode-collect");
+  var helpEl = document.getElementById("tr-mode-help");
+  var startBtn = document.getElementById("tr-train-btn");
+
+  if (mode === "collect") {
+    trainBtn.className = "btn btn-sm";
+    trainBtn.setAttribute("aria-pressed", "false");
+    collectBtn.className = "btn btn-sm active";
+    collectBtn.setAttribute("aria-pressed", "true");
+    helpEl.textContent = "Collect metrics on an existing Ultralytics YOLO model (no training).";
+  } else {
+    trainBtn.className = "btn btn-sm active";
+    trainBtn.setAttribute("aria-pressed", "true");
+    collectBtn.className = "btn btn-sm";
+    collectBtn.setAttribute("aria-pressed", "false");
+    helpEl.textContent = "Train a model with 3LC metrics collection.";
+  }
+  startBtn.textContent = trStartLabel();
+
+  trApplyModeVisibility();
+  trScheduleAutoSave();
+}
+
+function trApplyModeVisibility() {
+  var trainOnlyIds = ["epochs", "lr0", "lrf", "optimizer", "patience"];
+  var params = document.querySelectorAll("#tr-params-container [data-param-id]");
+  for (var i = 0; i < params.length; i++) {
+    var el = params[i];
+    var wrap = el.closest(".form-group") || el.parentElement;
+    if (trainOnlyIds.indexOf(el.dataset.paramId) !== -1) {
+      wrap.style.display = currentMode === "collect" ? "none" : "";
+    }
+  }
+}
+
+// ── Presets: the form in and out ─────────────────────────────
+function trDefaultFormData() {
+  return {
+    run_name: "", project_name: "", model_name: "", mode: "train", task_type: "",
+    train_table_url: "", val_table_url: "", use_latest: false,
+    params: { copy_model_to_run: true, workers: 8 },
+  };
+}
+
+// The tables the plugin was opened with: ?train=&val= from the DAG's Train link, or the action
+// button's tables. They replace the preset's inputs for the page's life (SDK guide → Presets).
+function trContextInputs() {
+  var ctx = (typeof PLUGIN_API !== "undefined" && PLUGIN_API.context) ? PLUGIN_API.context : {};
+  var urls = ctx.resourceUrls || [];
+  var q = new URLSearchParams(window.location.search);
+  if (q.has("train") || q.has("val")) {
+    return { train_table_url: q.get("train") || "", val_table_url: q.get("val") || "" };
+  }
+  if (ctx.resourceType === "run") return null; // A run is not a table; the assistant fills its input tables.
+  if (urls.length) return { train_table_url: urls[0], val_table_url: urls[1] || "" };
+  return null;
+}
+
+function trModelLabel(values) {
+  return (values.model_name || "yolo").split("/").pop().replace(/\.pt$/, "");
+}
+
+// The name a new preset gets unless the person types one: "yolo11n detect · 2026-10-27".
+function trAutoName(values) {
+  var d = new Date();
+  var dateStr = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  return trModelLabel(values) + " " + (values.task_type || values.mode || "train") + " \u00b7 " + dateStr;
+}
+
+// What the list shows after a preset's name: "yolo11n · detect".
+function trPresetSummary(values) {
+  return [values.model_name ? trModelLabel(values) : "", values.task_type || values.mode];
+}
+
+function trShowTask(badge, detail) {
+  document.getElementById("tr-task-badge").textContent = badge;
+  document.getElementById("tr-task-detail").textContent =
+    detail === "Detected task: " + badge ? "" : (detail || "");
+}
+
+// Fill the form from a preset's values. Resolves once the model's parameters are rendered, so the
+// preset bar compares the form only then.
+function trApplyFormData(values) {
+  values = values || {};
+  var params = values.params || {};
+  document.getElementById("tr-run-name").value = values.run_name || "";
+  document.getElementById("tr-3lc-project").value = values.project_name || "";
+  document.getElementById("tr-train-url").value = values.train_table_url || "";
+  document.getElementById("tr-val-url").value = values.val_table_url || "";
+  document.getElementById("tr-use-latest").checked = !!values.use_latest;
+  document.getElementById("tr-pretrained-url").value = params.pretrained_model_url || "";
+  document.getElementById("tr-copy-model").checked = params.copy_model_to_run !== false;
+  document.getElementById("tr-workers").value = params.workers != null ? params.workers : 8;
+  detectedTask = values.task_type || null;
+  trTaskError = "";
+  trDetecting = !!document.getElementById("tr-train-url").value.trim();
+  trSetMode(values.mode || "train");
+  trCheckTableAgainstRunTarget();
+  trShowTask(detectedTask || "--", "");
+  var model = values.model_name || "";
+  // The train table decides the task, and the 3LC project when none is set; the preset's own task
+  // stands while the table cannot be read (Start then says so).
+  var detect = document.getElementById("tr-train-url").value.trim() ? trDetectTask() : Promise.resolve(false);
+  return detect.then(function() {
+    return new Promise(function(resolve) {
+      trPopulateModelDropdown(detectedTask, function() {
+        var chosen = document.getElementById("tr-model-select").value;
+        resolve(trLoadModelParams(chosen, chosen === model ? params : {}));
+      }, model);
+    });
+  }).then(trGate);
+}
+
+function trInitPresets() {
+  trPresets = _tlcPluginPresets({
+    pluginId: "yolo",
+    apiPath: "/api/plugins/yolo/projects",
+    mount: "tr-presets",
+    formRoot: "tr-page",
+    collect: trCollectFormData,
+    apply: trApplyFormData,
+    defaults: trDefaultFormData,
+    inputs: ["train_table_url", "val_table_url"],
+    contextInputs: trContextInputs,
+    autoName: trAutoName,
+    summary: trPresetSummary,
+    legacyKey: _STORAGE_KEY,
+  });
+  return trPresets.init();
+}
+
+function trCollectFormData() {
+  var params = {};
+  var paramEls = document.querySelectorAll("#tr-params-container [data-param-id]");
+  for (var i = 0; i < paramEls.length; i++) {
+    var el = paramEls[i];
+    params[el.dataset.paramId] = el.type === "checkbox" ? el.checked : el.value;
+  }
+  // Also collect dynamic 3LC fields
+  var tlcEls = document.querySelectorAll("#tr-3lc-settings [data-param-id]");
+  for (var j = 0; j < tlcEls.length; j++) {
+    var tlcEl = tlcEls[j];
+    params[tlcEl.dataset.paramId] = tlcEl.type === "checkbox" ? tlcEl.checked : tlcEl.value;
+  }
+
+  // Model fine-tuning and checkpoint params
+  var pretrainedUrl = document.getElementById("tr-pretrained-url").value.trim();
+  if (pretrainedUrl) params.pretrained_model_url = pretrainedUrl;
+  params.copy_model_to_run = document.getElementById("tr-copy-model").checked;
+  params.workers = parseInt(document.getElementById("tr-workers").value, 10);
+  if (isNaN(params.workers) || params.workers < 0) params.workers = 8;
+
+  return {
+    run_name: document.getElementById("tr-run-name").value.trim(),
+    project_name: document.getElementById("tr-3lc-project").value.trim(),
+    model_name: document.getElementById("tr-model-select").value,
+    mode: currentMode,
+    task_type: detectedTask || "",
+    train_table_url: document.getElementById("tr-train-url").value.trim(),
+    val_table_url: document.getElementById("tr-val-url").value.trim(),
+    use_latest: document.getElementById("tr-use-latest").checked,
+    params: params,
+  };
+}
+
+// Shared copy planning consumes an advisory size, not YOLO-specific parameter names.
+// Mirror train()'s last key=value override without changing the training configuration.
+function trEffectiveImageCopySize(params) {
+  params = params || {};
+  var value = params.imgsz == null || params.imgsz === "" ? "640" : String(params.imgsz);
+  String(params.extra_args || "").trim().split(/\s+/).forEach(function (token) {
+    var split = token.indexOf("=");
+    if (split >= 0 && token.slice(0, split).trim() === "imgsz") value = token.slice(split + 1);
+  });
+  if (!/^[+-]?\d+$/.test(value.trim())) return null;
+  var size = Number(value);
+  return Number.isInteger(size) && size >= 32 && size <= 8192 ? size : null;
+}
+
+function trBuildRunBody(data) {
+  data = data || trCollectFormData();
+  var presetId = trPresets ? trPresets.presetId() : "";
+  return {
+    project_id: presetId,
+    project_name: data.project_name || "",
+    project_config: Object.assign({}, data, { id: presetId, name: trPresets ? trPresets.presetName() : "" }),
+    image_resize_max_edge: data.use_latest ? null : trEffectiveImageCopySize(data.mode === "collect"
+      ? Object.assign({}, data.params, { extra_args: "" }) : data.params),
+  };
+}
+
+var _trImageCopyTimer = null;
+var _trImageCopyRequest = 0;
+var _trImageCopyLastKey = "";
+function trScheduleImageCopyCheck() {
+  clearTimeout(_trImageCopyTimer);
+  // Invalidate an older answer immediately, while the next form edit is debouncing.
+  _trImageCopyRequest += 1;
+  _trImageCopyTimer = setTimeout(trCheckImageCopySize, 450);
+}
+
+function trCheckImageCopySize() {
+  var note = document.getElementById("tr-image-copy-size-note");
+  if (!note || !window.PLUGIN_API || typeof PLUGIN_API.planRun !== "function") return Promise.resolve();
+  var data = trCollectFormData();
+  if (!data.train_table_url || !data.model_name) { note.style.display = "none"; _trImageCopyLastKey = ""; return Promise.resolve(); }
+  var body = trBuildRunBody(data);
+  var target = typeof PLUGIN_API.getRunTarget === "function" ? PLUGIN_API.getRunTarget() : {};
+  var key = JSON.stringify([body, target.target, target.node_id]);
+  if (key === _trImageCopyLastKey) return Promise.resolve();
+  var request = ++_trImageCopyRequest;
+  note.style.display = "none";
+  if (data.use_latest) {
+    note.textContent = "Select a fixed table revision to resize copied images. Turn off Use the latest table revision when the job starts.";
+    note.style.color = "var(--text-muted, #64748b)";
+    note.style.display = "";
+    return Promise.resolve();
+  }
+  if (body.image_resize_max_edge === null) return Promise.resolve();
+  return PLUGIN_API.planRun(body).then(function (plan) {
+    if (request !== _trImageCopyRequest || note !== document.getElementById("tr-image-copy-size-note")) return;
+    _trImageCopyLastKey = key;
+    var info = plan && plan.image_resize;
+    var copyable = plan && (plan.refs || []).some(function (ref) {
+      return ref && ref.reach !== "in_place" && Array.isArray(ref.options) && ref.options.indexOf("copy") !== -1;
+    });
+    if (!info || !info.eligible || !info.mismatched || !copyable) return;
+    var sizes = (info.sample_sizes || []).slice(0, 2).map(function (size) { return size.width + " × " + size.height; });
+    note.textContent = (sizes.length ? "Sample images are " + sizes.join(" and ") + " px. " : "Image sizes differ from the model input. ") +
+      "Model input: " + info.max_edge + " px. " + (info.enabled
+        ? "Image copies will use your chosen maximum size."
+        : "When you start, Resize images in the copy dialog can reduce their size while keeping the aspect ratio. Resizing is off by default.");
+    note.style.color = "var(--warning, #b87917)";
+    note.style.display = "";
+  }).catch(function () {
+    // The host's existing data-access note owns errors. A failed preview never starts a job.
+    if (request === _trImageCopyRequest) _trImageCopyLastKey = "";
+  });
+}
+if (window.PLUGIN_API && typeof PLUGIN_API.onRunTargetChange === "function") {
+  PLUGIN_API.onRunTargetChange(function () { _trImageCopyLastKey = ""; trScheduleImageCopyCheck(); });
+}
+
+// ── Task Detection ───────────────────────────────────────────
+var _detectDebounce = null;
+
+// Selection-time data check against the host's "Run on:" target: warn the moment a
+// table is picked, not when Train is pressed. Optional host API — feature-detected,
+// silent on frontends that predate it.
+function trCheckTableAgainstRunTarget() {
+  var note = document.getElementById("tr-run-target-data-note");
+  if (!note || !window.PLUGIN_API || typeof PLUGIN_API.checkDataForRunTarget !== "function") return;
+  // Newer hosts annotate EVERY table input themselves (train and val alike) — leave the
+  // note to them so it is not shown twice. This path only serves older frontends.
+  if (PLUGIN_API.hostChecksTableInputs) { note.style.display = "none"; return; }
+  var url = document.getElementById("tr-train-url").value.trim();
+  var target = (typeof PLUGIN_API.getRunTarget === "function") ? PLUGIN_API.getRunTarget() : { target: "local" };
+  if (!url || target.target !== "node") { note.style.display = "none"; return; }
+  PLUGIN_API.checkDataForRunTarget(url).then(function (verdict) {
+    if (document.getElementById("tr-train-url").value.trim() !== url) return;  // stale
+    if (verdict.ok && !verdict.notes.length) { note.style.display = "none"; return; }
+    note.textContent = (verdict.ok ? "⚠️ " : "❌ This will NOT run on the GPU node: ") +
+      verdict.notes.join(" ");
+    note.style.color = verdict.ok ? "var(--warning, #d97706)" : "var(--error, #dc2626)";
+    note.style.display = "";
+  }).catch(function () { note.style.display = "none"; });
+}
+if (window.PLUGIN_API && typeof PLUGIN_API.onRunTargetChange === "function") {
+  PLUGIN_API.onRunTargetChange(trCheckTableAgainstRunTarget);
+}
+
+function trOnTrainTableChange() {
+  // Another table: its task is unknown until detection answers, and the previous table's must not
+  // ride along in a run. Start waits for the answer, debounce included.
+  var url = document.getElementById("tr-train-url").value.trim();
+  detectedTask = null;
+  trTaskError = "";
+  trDetecting = !!url;
+  trShowTask(url ? "detecting..." : "--", "");
+  trScheduleAutoSave();
+  trCheckTableAgainstRunTarget();
+  clearTimeout(_detectDebounce);
+  _detectDebounce = setTimeout(function() {
+    trDetectTask().then(function(detected) {
+      if (!detected) return;
+      trPopulateModelDropdown(detectedTask);
+      // Re-render params to filter checkpoint options by detected task
+      var curModel = document.getElementById("tr-model-select").value;
+      if (curModel) trLoadModelParams(curModel, trCollectFormData().params || {});
+    });
+  }, 500);
+}
+
+// Detect the task from the train table; resolves true when it answered. Fills the 3LC project when
+// none is set. A table that cannot be read leaves detectedTask as it is and sets trTaskError.
+function trDetectTask() {
+  var url = document.getElementById("tr-train-url").value.trim();
+  trTaskError = "";
+  if (!url) {
+    detectedTask = null;
+    trDetecting = false;
+    trShowTask("--", "");
+    trGate();
+    return Promise.resolve(false);
+  }
+  trDetecting = true;
+  trShowTask("detecting...", "");
+  trGate();
+  // An answer for a table no longer in the field is dropped: that field's own detection answers.
+  var current = function() { return document.getElementById("tr-train-url").value.trim() === url; };
+  var failed = function(error) {
+    trDetecting = false;
+    trTaskError = error;
+    trShowTask("error", error);
+    trGate();
+    return false;
+  };
+  return _trPost("/api/plugins/yolo/detect-task", { url: url })
+    .then(function(data) {
+      if (!current()) return false;
+      if (!data || data.error || !data.task) {
+        return failed(String((data && (data.details || data.error || data.detail)) || "No task in the answer."));
+      }
+      trDetecting = false;
+      detectedTask = data.task;
+      trShowTask(data.task, data.details || "");
+      var projInput = document.getElementById("tr-3lc-project");
+      if (data.project_name && !projInput.value.trim()) {
+        projInput.value = data.project_name;
+      }
+      trGate();
+      return true;
+    })
+    .catch(function(e) {
+      return current() ? failed(String(e)) : false;
+    });
+}
+
+// ── Models ───────────────────────────────────────────────────
+function trLoadModels(callback) {
+  if (modelsCache !== null) { callback(modelsCache); return; }
+  trModelsState = "loading";
+  _trFetchJson("/api/plugins/yolo/models")
+    .then(function(data) {
+      modelsCache = Array.isArray(data) ? data : [];
+      trModelsState = "ready";
+      trGate();
+      callback(modelsCache);
+    })
+    .catch(function() { trModelsState = "failed"; trGate(); callback([]); });
+}
+
+function trPopulateModelDropdown(taskType, onReady, wanted) {
+  trLoadModels(function(models) {
+    var select = document.getElementById("tr-model-select");
+    var prev = wanted || select.value;
+    select.innerHTML = '<option value="">-- Select a model --</option>';
+
+    var compatible = [];
+    models.forEach(function(m) {
+      if (!taskType || taskType === "unknown" || m.supported_tasks.indexOf(taskType) !== -1) {
+        var opt = document.createElement("option");
+        opt.value = m.name;
+        opt.textContent = m.display_name;
+        select.appendChild(opt);
+        compatible.push(m.name);
+      }
+    });
+
+    // Restore previous selection, or auto-select if exactly one match. A caller with onReady
+    // loads the parameters itself, once; a second load here would re-render them after it.
+    if (prev && compatible.indexOf(prev) !== -1) {
+      select.value = prev;
+    } else if (compatible.length === 1) {
+      select.value = compatible[0];
+      if (!onReady) trOnModelChange();
+    }
+    trExplainEmptyModels(models.length === 0);
+    trGate();  // the model was chosen in code
+
+    if (onReady) onReady();
+  });
+}
+
+// No models at all means the model module did not import; say why, in the person's words,
+// instead of an empty dropdown (found live on a bare Ubuntu server: OpenCV could not load libGL).
+function trExplainEmptyModels(empty) {
+  var select = document.getElementById("tr-model-select");
+  var note = document.getElementById("tr-model-note");
+  if (!empty) {
+    trModelDiscoveryError = "";
+    trModelDiscoveryHint = "";
+    if (note) note.remove();
+    return;
+  }
+  if (!note) {
+    note = document.createElement("div");
+    note.id = "tr-model-note";
+    note.style.cssText = "margin-top:6px;font-size:12px;line-height:1.5;color:var(--danger, #c0392b)";
+    select.parentNode.insertBefore(note, select.nextSibling);
+  }
+  note.textContent = "No models could be loaded.";
+  _trFetchJson("/api/plugins/yolo/models/status")
+    .then(function(st) {
+      // A successful model-list response can race this status request. Do not let an old
+      // discovery failure reappear after the worker has supplied usable models.
+      if (modelsCache && modelsCache.length) return;
+      trModelDiscoveryError = st && st.error ? String(st.error) : "";
+      trModelDiscoveryHint = st && st.hint ? String(st.hint) : "";
+      if (trModelDiscoveryError || trModelDiscoveryHint) {
+        note.textContent = "No models could be loaded. " +
+          (trModelDiscoveryError ? trModelDiscoveryError + ". " : "") + trModelDiscoveryHint;
+      }
+      trGate();
+    })
+    .catch(function(e) {
+      if (modelsCache && modelsCache.length) return;
+      trModelDiscoveryError = String(e);
+      note.textContent = "Could not load model status: " + trModelDiscoveryError;
+      trGate();
+    });
+}
+
+function trOnModelChange() {
+  var name = document.getElementById("tr-model-select").value;
+  if (!name) {
+    document.getElementById("tr-params-container").innerHTML = "";
+    return;
+  }
+  trLoadModelParams(name, {});
+  trScheduleAutoSave();
+}
+
+function trLoadModelParams(modelName, savedValues) {
+  if (!modelName) {
+    document.getElementById("tr-params-container").innerHTML = "";
+    return Promise.resolve();
+  }
+
+  var renderFromCache = function() {
+    var fields = modelParamsCache[modelName];
+    if (!fields) return;
+    trRenderParamFields(fields, savedValues);
+    trScheduleAutoSave();  // the form is whole again: the preset bar compares it now, not mid-render
+  };
+
+  if (modelParamsCache[modelName]) {
+    renderFromCache();
+    return Promise.resolve();
+  }
+
+  return _trFetchJson("/api/plugins/yolo/models/" + modelName + "/params")
+    .then(function(fields) {
+      modelParamsCache[modelName] = Array.isArray(fields) ? fields : [];
+      renderFromCache();
+    })
+    .catch(function() {
+      document.getElementById("tr-params-container").innerHTML =
+        '<div class="text-sm text-muted">Could not load parameters.</div>';
+    });
+}
+
+// A field may declare the tasks it applies to ("tasks": [...]) — the field-level twin
+// of the per-option "task" tag that narrows the checkpoint dropdown. A field the
+// detected task does not support is not rendered at all, so it cannot ride along in
+// the saved config: instance embeddings have no per-instance regions to pool from on a
+// classification model, and asking for them made the integration raise mid-run.
+// Nothing is filtered until detection has answered.
+function trFieldAppliesToTask(f) {
+  if (!f.tasks || !f.tasks.length) return true;
+  if (!detectedTask || detectedTask === "unknown") return true;
+  return f.tasks.indexOf(detectedTask) !== -1;
+}
+
+function trRenderParamFields(allFields, savedValues) {
+  var container = document.getElementById("tr-params-container");
+  container.innerHTML = "";
+
+  var fields = allFields.filter(trFieldAppliesToTask);
+  var hiddenFields = allFields.filter(function(f) { return !trFieldAppliesToTask(f); });
+
+  // Group fields — skip "3LC Settings" as those render in their own card
+  var groups = {};
+  fields.forEach(function(f) {
+    var g = f.group || "Parameters";
+    if (g === "3LC Settings") return;
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(f);
+  });
+
+  Object.keys(groups).forEach(function(groupName) {
+    var groupFields = groups[groupName];
+    var groupDiv = document.createElement("div");
+
+    var regularFields = groupFields.filter(function(f) { return f.type !== "checkbox" && !f.wide; });
+    var wideFields = groupFields.filter(function(f) { return f.type !== "checkbox" && f.wide; });
+    var checkboxFields = groupFields.filter(function(f) { return f.type === "checkbox"; });
+
+    // Regular fields in a 4-column CSS grid
+    if (regularFields.length > 0) {
+      var grid = document.createElement("div");
+      grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px;margin-bottom:8px";
+
+      regularFields.forEach(function(f) {
+        var wrap = document.createElement("div");
+        wrap.className = "form-group";
+        wrap.style.marginBottom = "0";
+
+        var lbl = document.createElement("label");
+        lbl.className = "form-label";
+        lbl.textContent = f.label;
+        wrap.appendChild(lbl);
+
+        var input;
+        var val = savedValues[f.id] !== undefined ? savedValues[f.id] : f["default"];
+
+        if (f.type === "select" && f.options) {
+          input = document.createElement("select");
+          input.className = "form-control";
+          f.options.forEach(function(opt) {
+            // Filter by detected task if option has a task tag
+            if (opt.task && detectedTask && opt.task !== detectedTask) return;
+            var o = document.createElement("option");
+            o.value = opt.value;
+            o.textContent = opt.label;
+            if (String(opt.value) === String(val)) o.selected = true;
+            input.appendChild(o);
+          });
+        } else if (f.type === "number") {
+          input = document.createElement("input");
+          input.type = "number";
+          input.className = "form-control";
+          if (f.min !== undefined) input.min = f.min;
+          if (f.max !== undefined) input.max = f.max;
+          if (f.step !== undefined) input.step = f.step;
+          input.value = val !== undefined ? val : "";
+        } else {
+          input = document.createElement("input");
+          input.type = "text";
+          input.className = "form-control";
+          input.placeholder = f.placeholder || "";
+          input.value = val !== undefined ? val : "";
+        }
+
+        input.dataset.paramId = f.id;
+        input.addEventListener("input", trScheduleAutoSave);
+        input.addEventListener("change", trScheduleAutoSave);
+        wrap.appendChild(input);
+
+        if (f.help) {
+          var help = document.createElement("div");
+          help.className = "form-help";
+          help.textContent = f.help;
+          wrap.appendChild(help);
+        }
+
+        grid.appendChild(wrap);
+      });
+
+      groupDiv.appendChild(grid);
+    }
+
+    // Wide fields — full width below the grid
+    wideFields.forEach(function(f) {
+      var wrap = document.createElement("div");
+      wrap.className = "form-group";
+      wrap.style.marginBottom = "8px";
+
+      var lbl = document.createElement("label");
+      lbl.className = "form-label";
+      lbl.textContent = f.label;
+      wrap.appendChild(lbl);
+
+      var input = document.createElement("input");
+      input.type = "text";
+      input.className = "form-control";
+      input.placeholder = f.help || "";
+      var val = savedValues[f.id] !== undefined ? savedValues[f.id] : f["default"];
+      input.value = val !== undefined ? val : "";
+      input.dataset.paramId = f.id;
+      input.addEventListener("input", trScheduleAutoSave);
+      input.addEventListener("change", trScheduleAutoSave);
+      wrap.appendChild(input);
+
+      groupDiv.appendChild(wrap);
+    });
+
+    // Checkboxes in a compact row
+    if (checkboxFields.length > 0) {
+      var cbRow = document.createElement("div");
+      cbRow.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;align-items:center";
+
+      checkboxFields.forEach(function(f) {
+        var wrap = document.createElement("div");
+        wrap.style.cssText = "display:flex;align-items:center;gap:5px";
+
+        var val = savedValues[f.id] !== undefined ? savedValues[f.id] : f["default"];
+        var input = document.createElement("input");
+        input.type = "checkbox";
+        input.style.cssText = "accent-color:var(--accent);width:15px;height:15px";
+        input.checked = val === true || val === "true" || val === "1";
+        input.dataset.paramId = f.id;
+        input.addEventListener("change", trScheduleAutoSave);
+        wrap.appendChild(input);
+
+        var cbLabel = document.createElement("label");
+        cbLabel.className = "text-sm";
+        cbLabel.style.cursor = "pointer";
+        cbLabel.textContent = f.label;
+        cbLabel.onclick = function() { input.checked = !input.checked; input.dispatchEvent(new Event("change")); };
+        wrap.appendChild(cbLabel);
+        if (f.help) cbLabel.title = f.help;
+
+        cbRow.appendChild(wrap);
+      });
+
+      groupDiv.appendChild(cbRow);
+    }
+
+    container.appendChild(groupDiv);
+  });
+
+  // Apply mode visibility to newly rendered fields
+  trApplyModeVisibility();
+
+  // Render any 3LC Settings params into the dedicated section
+  var tlcFields = fields.filter(function(f) { return f.group === "3LC Settings"; });
+  var tlcSection = document.getElementById("tr-3lc-settings");
+  tlcSection.innerHTML = "";
+
+  // Disable GT instance embeddings checkbox when instance_embeddings_dim is 0
+  var _syncGtCheckbox = function() {
+    var dim = tlcSection.querySelector('[data-param-id="instance_embeddings_dim"]');
+    var gt = tlcSection.querySelector('[data-param-id="ground_truth_instance_embeddings"]');
+    if (!dim || !gt) return;
+    var disabled = parseInt(dim.value, 10) === 0;
+    gt.disabled = disabled;
+    if (disabled && gt.checked) {
+      gt.checked = false;
+      trScheduleAutoSave();
+    }
+    var gtWrap = gt.parentNode;
+    if (gtWrap) gtWrap.style.opacity = disabled ? '0.5' : '';
+  };
+  tlcSection.addEventListener('change', function(e) {
+    if (e.target && e.target.dataset && e.target.dataset.paramId === 'instance_embeddings_dim') {
+      _syncGtCheckbox();
+    }
+  });
+
+  if (tlcFields.length > 0) {
+    var tlcRegular = tlcFields.filter(function(f) { return f.type !== "checkbox"; });
+    var tlcCheckboxes = tlcFields.filter(function(f) { return f.type === "checkbox"; });
+
+    if (tlcRegular.length > 0) {
+      var grid = document.createElement("div");
+      grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px;margin-top:8px";
+
+      tlcRegular.forEach(function(f) {
+        var wrap = document.createElement("div");
+        wrap.className = "form-group";
+        wrap.style.marginBottom = "0";
+        var val = savedValues[f.id] !== undefined ? savedValues[f.id] : f["default"];
+        var input;
+
+        var lbl = document.createElement("label");
+        lbl.className = "form-label";
+        lbl.textContent = f.label;
+        wrap.appendChild(lbl);
+
+        if (f.type === "select" && f.options) {
+          input = document.createElement("select");
+          input.className = "form-control";
+          f.options.forEach(function(opt) {
+            // Filter by detected task if option has a task tag
+            if (opt.task && detectedTask && opt.task !== detectedTask) return;
+            var o = document.createElement("option");
+            o.value = opt.value;
+            o.textContent = opt.label;
+            if (String(opt.value) === String(val)) o.selected = true;
+            input.appendChild(o);
+          });
+          input.dataset.paramId = f.id;
+          input.addEventListener("change", trScheduleAutoSave);
+        } else if (f.type === "number") {
+          input = document.createElement("input");
+          input.type = "number";
+          input.className = "form-control";
+          if (f.min !== undefined) input.min = f.min;
+          if (f.max !== undefined) input.max = f.max;
+          if (f.step !== undefined) input.step = f.step;
+          input.value = val !== undefined ? val : "";
+          input.dataset.paramId = f.id;
+          input.addEventListener("input", trScheduleAutoSave);
+          input.addEventListener("change", trScheduleAutoSave);
+        } else {
+          input = document.createElement("input");
+          input.type = "text";
+          input.className = "form-control";
+          input.value = val !== undefined ? val : "";
+          input.dataset.paramId = f.id;
+          input.addEventListener("input", trScheduleAutoSave);
+          input.addEventListener("change", trScheduleAutoSave);
+        }
+
+        wrap.appendChild(input);
+        if (f.help) {
+          var help = document.createElement("div");
+          help.className = "form-help";
+          help.textContent = f.help;
+          wrap.appendChild(help);
+        }
+        grid.appendChild(wrap);
+      });
+      tlcSection.appendChild(grid);
+
+      // Wire instance reducer → instance dim field switching: PCA allows arbitrary
+      // output dimensions (number input); UMAP/PaCMAP reduce to the 0/2/3 dropdown.
+      // (Image embeddings only support UMAP/PaCMAP, so their dim stays a dropdown.)
+      var reducerEl = grid.querySelector('[data-param-id="instance_embeddings_reducer"]');
+      if (reducerEl) {
+        var _dimIds = ['instance_embeddings_dim'];
+        function _switchDimFields() {
+          var isPca = reducerEl.value === 'pca';
+          _dimIds.forEach(function(pid) {
+            var old = grid.querySelector('[data-param-id="' + pid + '"]');
+            if (!old) return;
+            var wrap = old.parentNode;
+            var curVal = old.value;
+            if (isPca && old.tagName === 'SELECT') {
+              var num = document.createElement('input');
+              num.type = 'number'; num.className = 'form-control';
+              num.min = 0; num.max = 512; num.step = 1;
+              num.value = parseInt(curVal, 10) || 2;
+              num.dataset.paramId = pid;
+              num.addEventListener('input', trScheduleAutoSave);
+              num.addEventListener('change', trScheduleAutoSave);
+              wrap.replaceChild(num, old);
+            } else if (!isPca && old.tagName === 'INPUT') {
+              var f = tlcRegular.find(function(x) { return x.id === pid; });
+              if (!f || !f.options) return;
+              var sel = document.createElement('select');
+              sel.className = 'form-control'; sel.dataset.paramId = pid;
+              var numVal = parseInt(curVal, 10);
+              var matched = false;
+              f.options.forEach(function(opt) {
+                var o = document.createElement('option');
+                o.value = opt.value; o.textContent = opt.label;
+                if (parseInt(opt.value, 10) === numVal) { o.selected = true; matched = true; }
+                sel.appendChild(o);
+              });
+              if (!matched) sel.value = f['default'];
+              sel.addEventListener('change', trScheduleAutoSave);
+              wrap.replaceChild(sel, old);
+            }
+          });
+          trScheduleAutoSave();
+          _syncGtCheckbox();
+        }
+        reducerEl.addEventListener('change', _switchDimFields);
+        _switchDimFields(); // apply on initial render
+      }
+    }
+
+    if (tlcCheckboxes.length > 0) {
+      var cbRow = document.createElement("div");
+      cbRow.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:8px";
+
+      tlcCheckboxes.forEach(function(f) {
+        var wrap = document.createElement("div");
+        wrap.style.cssText = "display:flex;align-items:center;gap:5px";
+
+        var val = savedValues[f.id] !== undefined ? savedValues[f.id] : f["default"];
+        var input = document.createElement("input");
+        input.type = "checkbox";
+        input.style.cssText = "accent-color:var(--accent);width:15px;height:15px";
+        input.checked = val === true || val === "true" || val === "1";
+        input.dataset.paramId = f.id;
+        input.addEventListener("change", trScheduleAutoSave);
+        wrap.appendChild(input);
+
+        var cbLabel = document.createElement("label");
+        cbLabel.className = "text-sm";
+        cbLabel.style.cursor = "pointer";
+        cbLabel.textContent = f.label;
+        cbLabel.onclick = function() { input.checked = !input.checked; input.dispatchEvent(new Event("change")); };
+        wrap.appendChild(cbLabel);
+        if (f.help) cbLabel.title = f.help;
+
+        cbRow.appendChild(wrap);
+      });
+      tlcSection.appendChild(cbRow);
+    }
+  }
+
+  // Say why the task-specific settings are missing — a silently shorter form reads as
+  // a bug, and people go looking for the embeddings switch they used on a detection table.
+  var hiddenTlc = hiddenFields.filter(function(f) { return f.group === "3LC Settings"; });
+  if (hiddenTlc.length > 0) {
+    var note = document.createElement("div");
+    note.className = "form-help";
+    note.style.marginTop = "8px";
+    note.textContent = "Not available for the " + detectedTask + " task: " +
+      hiddenTlc.map(function(f) { return f.label; }).join(", ") + ".";
+    tlcSection.appendChild(note);
+  }
+
+  _syncGtCheckbox();
+}
+
+// ── Training ─────────────────────────────────────────────────
+function trStartTraining() {
+  // Start is disabled while it cannot run; a stale state must not submit either.
+  if (_trSubmitting || trStartBlocker()) { trGate(); return; }
+  var data = trCollectFormData();
+  // Start training (host-managed via the unified run_job contract) through the SDK's
+  // PluginJobs client. project_name attributes the job in the generic Queue & Progress
+  // panel — the host reads it from the run body only. Left blank, PluginJobs fills it
+  // from the launch context (the project page the plugin was opened from).
+  // The run body is self-contained: project_config rides inline, so a remote GPU worker
+  // needs no local project store (SDK guide, "Run-body conventions for remote workers").
+  // The preset's id and name are set while the form is unchanged from it, so the job card
+  // can name it, and empty otherwise. A run never saves a preset.
+  var body = trBuildRunBody(data);
+  // One run per press: Start stays disabled until the run request answers.
+  _trSubmitting = true;
+  trGate();
+  PluginJobs.start("yolo", body)
+    .then(function(trainResp) {
+      _trSubmitting = false;
+      trGate();
+      if (!trainResp || trainResp.error) {
+        trLog("Error: " + ((trainResp && trainResp.error) || "failed to start job"));
+        return;
+      }
+      if (!trainResp.job_id) {
+        trLog(_trNotStartedMessage(trainResp));
+        return;
+      }
+      trLog("YOLO job submitted: " + trainResp.job_id);
+      trShowCurrentJob(trainResp.job_id, _trJobLabel(data));
+      trTrackJob(trainResp.job_id);
+    })
+    .catch(function(e) { _trSubmitting = false; trGate(); trLog("Error starting training: " + e); });
+}
+
+// /run answers {status, provisioning} instead of a job while the plugin's
+// environment is still being built (or its last build failed) — say so, rather
+// than tracking an undefined job id.
+function _trNotStartedMessage(resp) {
+  var prov = resp.provisioning || {};
+  var state = prov.state || resp.status || "unknown";
+  if (state === "failed") {
+    return "Plugin environment build failed" + (prov.error ? ": " + prov.error : "") +
+      " — see the Plugins page.";
+  }
+  if (state === "provisioning" || state === "unprovisioned") {
+    return "Plugin environment is still being set up (" + state + ") — try again in a moment.";
+  }
+  return "Job was not started (status: " + state + ").";
+}
+
+// ── Queue Rendering ──────────────────────────────────────────
+// Job state is host-managed (generic Queue & Progress panel) and pushed live over
+// SocketIO (the plugin's epoch_progress / job_status plus the generic job_update).
+// The plugin no longer owns a /queue endpoint, so this is a no-op kept only as a
+// call-site stub.
+function trLoadQueue() {}
+
+// Build a human label for the current-job panel from the submitted form data.
+function _trJobLabel(data) {
+  var modeLabel = data.mode === "collect" ? "Collect" : "Train";
+  var name = (data.name || data.run_name || "Job").trim();
+  var model = (data.model_name || "yolo").split("/").pop().replace(/\.pt$/, "");
+  return name + " (" + model + " · " + modeLabel + ")";
+}
+
+// Reveal the current-job panel. The backend no longer emits the legacy
+// queue_update event (removed in the run_job migration), so the live
+// epoch_progress / job_status socket handlers drive visibility instead — each
+// of those events carries data.job_id.
+function trShowCurrentJob(jobId, label) {
+  // A delayed private telemetry event must not reopen a completed job.
+  if (jobId && _trFinishedJobs.indexOf(jobId) !== -1) return false;
+  var changedJob = jobId && jobId !== _currentJobId;
+  if (jobId) { _currentJobId = jobId; }
+  var currentDiv = document.getElementById("tr-current-job");
+  var noCurrentDiv = document.getElementById("tr-no-current");
+  var firstReveal = currentDiv.style.display === "none" || currentDiv.style.display === "";
+  if (changedJob) {
+    document.getElementById("tr-epoch-bar").style.width = "0%";
+    document.getElementById("tr-pct-label").textContent = "0%";
+    document.getElementById("tr-epoch-label").textContent = "Starting…";
+    document.getElementById("tr-current-info").textContent = "";
+    document.getElementById("tr-current-info").style.color = "";
+    document.getElementById("tr-current-open-link").innerHTML = "";
+    document.getElementById("tr-timing").innerHTML = "";
+    trClearMetrics();
+  }
+  if (firstReveal || changedJob) {
+    currentDiv.style.display = "block";
+    noCurrentDiv.style.display = "none";
+    var statusEl = document.getElementById("tr-current-status");
+    statusEl.textContent = "running";
+    statusEl.className = "tr-queue-status plugin-status-running";
+    document.getElementById("tr-stop-btn").style.display = "inline-block";
+  }
+  if (label) { document.getElementById("tr-current-label").textContent = label; }
+  // Also track jobs first observed through telemetry (for example, started in
+  // another tab). Epoch events alone never carry completion.
+  if (jobId) trTrackJob(jobId);
+  return true;
+}
+
+// Mark the current-job panel terminal (completed / failed / cancelled) from the
+// generic job record: the Open link targets the job's project (as the Queue card
+// does) and a failure shows the host's `error` text.
+function trFinishCurrentJob(status, job) {
+  job = job || {};
+  var finishedId = job.id || _currentJobId;
+  if (finishedId && _trFinishedJobs.indexOf(finishedId) === -1) {
+    _trFinishedJobs.push(finishedId);
+    _trFinishedJobs = _trFinishedJobs.slice(-32);
+  }
+  if (status === "completed") {
+    document.getElementById("tr-epoch-bar").style.width = "100%";
+    document.getElementById("tr-pct-label").textContent = "100%";
+    document.getElementById("tr-epoch-label").textContent = "Completed";
+  }
+  var statusEl = document.getElementById("tr-current-status");
+  statusEl.textContent = status;
+  statusEl.className = "tr-queue-status plugin-status-" + status;
+  document.getElementById("tr-stop-btn").style.display = "none";
+  var openEl = document.getElementById("tr-current-open-link");
+  if (openEl) {
+    var projectName = job.project_name || "";
+    openEl.innerHTML = projectName
+      ? '<a href="/projects/' + encodeURIComponent(projectName) + '" class="btn btn-sm btn-secondary">Open</a>'
+      : "";
+  }
+  var infoEl = document.getElementById("tr-current-info");
+  if (infoEl) {
+    if (status === "failed") {
+      infoEl.textContent = job.error || job.subtitle || "Job failed";
+      infoEl.style.color = "var(--danger-color)";
+    } else {
+      infoEl.textContent = "";
+      infoEl.style.color = "";
+    }
+  }
+  _currentJobId = null;
+}
+
+function _jobInfoHtml(j) {
+  if (j.tlc_project_name) return _esc(j.tlc_project_name);
+  return "";
+}
+
+function _jobModelLabel(j) {
+  var ckpt = j.checkpoint || "";
+  if (ckpt) return ckpt.split("/").pop().replace(/\.pt$/, "");
+  return j.model_name || "";
+}
+
+function _openProjectLink(j) {
+  var projectName = j.tlc_project_name || "";
+  if (!projectName) return "";
+  return '<a href="/projects/' + encodeURIComponent(projectName) + '" class="btn btn-sm btn-secondary">Open</a>';
+}
+
+function trRenderQueue(data) {
+  var currentDiv = document.getElementById("tr-current-job");
+  var noCurrentDiv = document.getElementById("tr-no-current");
+  var stopBtn = document.getElementById("tr-stop-btn");
+
+  if (data.current) {
+    currentDiv.style.display = "block";
+    noCurrentDiv.style.display = "none";
+    if (_currentJobId !== data.current.id) trClearMetrics();
+    _currentJobId = data.current.id;
+    var modeLabel = data.current.mode === "collect" ? "Collect" : "Train";
+    document.getElementById("tr-current-label").textContent =
+      (data.current.tlc_run_name || data.current.project_name || "Job") + " (" + _jobModelLabel(data.current) + " · " + modeLabel + ")";
+    var statusEl = document.getElementById("tr-current-status");
+    statusEl.textContent = data.current.status;
+    statusEl.className = "tr-queue-status plugin-status-" + data.current.status;
+
+    stopBtn.style.display = data.current.status === "running" ? "inline-block" : "none";
+
+    var infoEl = document.getElementById("tr-current-info");
+    infoEl.innerHTML = _jobInfoHtml(data.current);
+
+    document.getElementById("tr-current-open-link").innerHTML = _openProjectLink(data.current);
+
+    if (data.current.progress) {
+      var pm = data.current.progress.metrics || {};
+      var pPhase = pm.phase || "";
+      var pBatch = pm.batch || 0;
+      var pTotalBatches = pm.total_batches || 0;
+      var pBatchFrac = pm.batch_frac || 0;
+      var pct, pLabel;
+      if (pPhase === "collect") {
+        pct = pTotalBatches > 0 ? (pBatch / pTotalBatches) * 100 : 0;
+        pLabel = pBatch && pTotalBatches ? "Collecting " + pBatch + "/" + pTotalBatches : "Collecting...";
+      } else if (data.current.progress.epoch) {
+        var epochFrac = pTotalBatches > 0 ? (pBatch / pTotalBatches) : 1;
+        pct = ((data.current.progress.epoch - 1 + epochFrac) / data.current.progress.total_epochs) * 100;
+        pLabel = "Epoch " + data.current.progress.epoch + "/" + data.current.progress.total_epochs;
+      } else {
+        pct = 0;
+        pLabel = "Starting...";
+      }
+      pct = Math.max(0, Math.min(pct, 100));
+      document.getElementById("tr-epoch-label").textContent = pLabel;
+      document.getElementById("tr-epoch-bar").style.width = Math.round(pct) + "%";
+      document.getElementById("tr-pct-label").textContent = Math.round(pct) + "%";
+      if (pm) trRenderMetrics(pm);
+    }
+  } else {
+    currentDiv.style.display = "none";
+    noCurrentDiv.style.display = "block";
+    _currentJobId = null;
+    stopBtn.style.display = "none";
+    trClearMetrics();
+    document.getElementById("tr-timing").innerHTML = "";
+    document.getElementById("tr-pct-label").textContent = "0%";
+    document.getElementById("tr-epoch-bar").style.width = "0%";
+    document.getElementById("tr-epoch-label").textContent = "Epoch 0/0";
+  }
+
+  // Queued jobs
+  var queueSection = document.getElementById("tr-queue-section");
+  var queueList = document.getElementById("tr-queue-list");
+  if (data.queued && data.queued.length > 0) {
+    queueSection.style.display = "block";
+    queueList.innerHTML = "";
+    data.queued.forEach(function(j) {
+      var item = document.createElement("div");
+      item.className = "tr-queue-item";
+      var info = _jobInfoHtml(j);
+      var jModeLabel = j.mode === "collect" ? "Collect" : "Train";
+      item.innerHTML =
+        '<span class="tr-queue-status plugin-status-queued">queued</span>' +
+        '<span style="flex:1">' +
+          '<div>' + _esc(j.tlc_run_name || j.project_name) + ' (' + _esc(_jobModelLabel(j)) + ' · ' + jModeLabel + ')</div>' +
+          (info ? '<div class="tr-job-info">' + info + '</div>' : '') +
+        '</span>' +
+        '<button class="btn btn-ghost btn-sm" onclick="trCancelJob(\'' + j.id + '\')" style="color:var(--danger-color)">Cancel</button>';
+      queueList.appendChild(item);
+    });
+  } else {
+    queueSection.style.display = "none";
+  }
+
+  // Completed jobs
+  var completedSection = document.getElementById("tr-completed-section");
+  var completedList = document.getElementById("tr-completed-list");
+  if (data.completed && data.completed.length > 0) {
+    completedSection.style.display = "block";
+    completedList.innerHTML = "";
+    var reversed = data.completed.slice().reverse();
+    reversed.forEach(function(j) {
+      var item = document.createElement("div");
+      item.className = "tr-queue-item";
+      var info = _jobInfoHtml(j);
+      var openLink = _openProjectLink(j);
+      var extra = openLink;
+      if (j.status === "failed" && j.error) {
+        extra = '<span class="text-sm" style="color:var(--danger-color)" title="' + _esc(j.error) + '">Error</span>';
+      }
+      var cModeLabel = j.mode === "collect" ? "Collect" : "Train";
+      item.innerHTML =
+        '<span class="tr-queue-status plugin-status-' + j.status + '">' + j.status + '</span>' +
+        '<span style="flex:1">' +
+          '<div>' + _esc(j.tlc_run_name || j.project_name) + ' (' + _esc(_jobModelLabel(j)) + ' · ' + cModeLabel + ')</div>' +
+          (info ? '<div class="tr-job-info">' + info + '</div>' : '') +
+        '</span>' +
+        extra;
+      completedList.appendChild(item);
+    });
+  } else {
+    completedSection.style.display = "none";
+  }
+}
+
+var _METRIC_SKIP_KEYS = { phase: 1, batch: 1, total_batches: 1, batch_frac: 1 };
+
+function _trFmtDuration(s) {
+  if (s === undefined || s === null) return '--';
+  s = Math.round(s);
+  if (s < 60) return s + 's';
+  var m = Math.floor(s / 60);
+  var sec = s % 60;
+  if (m < 60) return m + 'm ' + (sec < 10 ? '0' : '') + sec + 's';
+  var h = Math.floor(m / 60);
+  m = m % 60;
+  return h + 'h ' + (m < 10 ? '0' : '') + m + 'm';
+}
+
+var _trMetricEls = {}; // key -> { container, valueEl }
+
+function trRenderMetrics(metrics) {
+  var container = document.getElementById("tr-current-metrics");
+  if (!container) return;
+
+  var keys = Object.keys(metrics);
+  var activeKeys = {};
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    var val = metrics[key];
+    if (_METRIC_SKIP_KEYS[key]) continue;
+    if (typeof val !== "number") continue;
+    activeKeys[key] = true;
+
+    if (_trMetricEls[key]) {
+      // Update value in place — no DOM rebuild
+      _trMetricEls[key].valueEl.textContent = val.toFixed(4);
+    } else {
+      // Create new card
+      var div = document.createElement("div");
+      div.className = "plugin-metric-card";
+      div.setAttribute("data-metric-key", key);
+      var labelDiv = document.createElement("div");
+      labelDiv.className = "plugin-metric-label";
+      labelDiv.textContent = key.replace(/_/g, " ");
+      var valueDiv = document.createElement("div");
+      valueDiv.className = "plugin-metric-value";
+      valueDiv.textContent = val.toFixed(4);
+      div.appendChild(labelDiv);
+      div.appendChild(valueDiv);
+      container.appendChild(div);
+      _trMetricEls[key] = { container: div, valueEl: valueDiv };
+    }
+  }
+
+  // Remove cards for metrics no longer present
+  var existing = Object.keys(_trMetricEls);
+  for (var j = 0; j < existing.length; j++) {
+    if (!activeKeys[existing[j]]) {
+      _trMetricEls[existing[j]].container.remove();
+      delete _trMetricEls[existing[j]];
+    }
+  }
+}
+
+function trClearMetrics() {
+  var container = document.getElementById("tr-current-metrics");
+  if (container) container.innerHTML = "";
+  _trMetricEls = {};
+}
+
+function trStopCurrentJob() {
+  if (!_currentJobId) { console.warn("trStopCurrentJob: no _currentJobId"); return; }
+  CancelJob.show(_currentJobId, {
+    pluginId: 'yolo',
+    onDone: function(result) {
+      trLog(result.deleted ? "Job stopped and run deleted." : "Job stopped.");
+      trLoadQueue();
+    }
+  });
+}
+
+function trCancelJob(jobId) {
+  _trPost("/api/plugins/jobs/" + jobId + "/cancel", {})
+    .then(function(data) {
+      trLog(data.cancelled ? "Job cancelled." : "Could not cancel job.");
+      trLoadQueue();
+    })
+    .catch(function(e) { trLog("Error: " + e); });
+}
+
+// ── Utils ────────────────────────────────────────────────────
+function _esc(s) {
+  var el = document.createElement("span");
+  el.textContent = s || "";
+  return el.innerHTML;
+}
+
+// ── Swap train / val URLs ────────────────────────────────────
+function trSwapUrls() {
+  var train = document.getElementById("tr-train-url");
+  var val = document.getElementById("tr-val-url");
+  var tmp = train.value;
+  train.value = val.value;
+  val.value = tmp;
+  trOnTrainTableChange();
+}
+
+// ── Data Source Init ──────────────────────────────────────────
+// The SDK's shared data-source picker for the pretrained checkpoint: the rendered
+// text input keeps the id "tr-pretrained-url", so config save/restore reads and
+// writes it exactly as before.
+(function() {
+  document.getElementById("tr-pretrained-ds").innerHTML = _tlcDataSourceHtml("tr-pretrained-url", {
+    placeholder: "Path to .pt checkpoint (leave empty for default pretrained)",
+    accept: "*.pt,*.pth",
+    mode: "file",
+  });
+  _tlcBindDataSource("tr-pretrained-url", COMPUTE_URL, "yolo", { accept: "*.pt,*.pth", mode: "file" });
+})();
+
+// ── Init ─────────────────────────────────────────────────────
+(function() {
+  trInitSocket();
+  trSeedFromHost();
+  trLoadQueue();
+  // Start and Swap follow every edit; what the page sets in code calls trGate itself.
+  document.getElementById("tr-page").addEventListener("input", trGate);
+  document.getElementById("tr-page").addEventListener("change", trGate);
+  document.getElementById("tr-page").addEventListener("input", trScheduleImageCopyCheck);
+  document.getElementById("tr-page").addEventListener("change", trScheduleImageCopyCheck);
+  trLoadModels(function() {});
+  trGate();
+  // The preset bar opens the form: as it was last left in this browser, else on Default
+  // settings, with the tables the plugin was opened with (trContextInputs) in place of its own.
+  trInitPresets();
+})();

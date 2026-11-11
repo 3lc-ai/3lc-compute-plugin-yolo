@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tlc_plugin_yolo.models import MODEL_REGISTRY
+from tlc_plugin_yolo.form_fields import MODEL_INFO
 
 
 def detect_task(table_url: str) -> dict[str, Any]:
@@ -71,12 +71,4 @@ def _modality_to_yolo_task(modality: str) -> str:
 
 def _models_for_task(task: str) -> list[dict[str, Any]]:
     """Return models compatible with the given task."""
-    results = []
-    for model in MODEL_REGISTRY.values():
-        if task == "unknown" or task in model.supported_tasks:
-            results.append({
-                "name": model.name,
-                "display_name": model.display_name,
-                "supported_tasks": model.supported_tasks,
-            })
-    return results
+    return [dict(MODEL_INFO)] if task == "unknown" or task in MODEL_INFO["supported_tasks"] else []

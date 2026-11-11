@@ -20,7 +20,7 @@ class TrainingProject:
     name: str = ""
     run_name: str = ""  # 3LC Run name (empty = random)
     project_name: str = ""  # 3LC project for Run association
-    model_name: str = ""  # "yolov8", etc.
+    model_name: str = "yolov8"  # The Ultralytics adapter; weights select the actual architecture.
     task_type: str = ""  # "classification", "detection", ...
     train_table_url: str = ""
     val_table_url: str = ""

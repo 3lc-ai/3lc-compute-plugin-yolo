@@ -4,7 +4,7 @@
 id = "yolo"
 name = "Ultralytics YOLO"
 description = "Fine-tune Ultralytics YOLO models on your data with live metrics, SocketIO progress, and experiment tracking. Uses Ultralytics YOLO (AGPL-3.0); commercial use may require an Ultralytics Enterprise License."
-version = "0.3.0"
+version = "0.3.4"
 min_service_version = "0.1.0"
 # <tlc-table-field> (the table fields) is defined by the Hub from 1.2.0 on.
 min_frontend_version = "1.2.0"
@@ -28,6 +28,7 @@ quick_action_description = "Fine-tune an Ultralytics YOLO model on your data wit
 [runtime]
 isolation = "venv"
 entrypoint = "tlc_plugin_yolo:YoloPlugin"
+node_routes = ["/form-from-run"]
 # Heavy stack lives behind this extra of the providing distribution; the host
 # installs it ONLY into this plugin's provisioned venv, never the host venv.
 provision_extra = "yolo"
@@ -46,3 +47,9 @@ data_inputs = [
     "project_config.val_table_url",
     "project_config.params.pretrained_model_url",
 ]
+
+# What an agent can do with this plugin over the deployment's MCP (SDK guide, "MCP tools"). The job body is the
+# page's own run body, so a training started here and one started from the page are the same job.
+[mcp]
+# Generated from job_contract.py and the same form fields used by the UI.
+tools_file = "mcp-tools.json"

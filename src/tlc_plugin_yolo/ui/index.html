@@ -1,0 +1,225 @@
+<!-- Copyright 2026 3LC Inc. -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- YOLO — self-contained plugin UI fragment -->
+<style>{{asset:styles.css}}</style>
+
+<div class="plugin-page plugin-workbench" id="tr-page">
+<!-- ── License notice ─────────────────────────────────────── -->
+<div class="yolo-license-note">
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v11"/><path d="M3 5h10"/><path d="M5 5l-2.2 4.5a2.4 2.4 0 0 0 4.4 0L5 5z"/><path d="M11 5l-2.2 4.5a2.4 2.4 0 0 0 4.4 0L11 5z"/><path d="M6 14h4"/></svg>
+  <span>
+    This plugin uses <a href="https://github.com/ultralytics/ultralytics" target="_blank" rel="noopener">Ultralytics YOLO</a>, which is dual-licensed:
+    free under the <a href="https://github.com/ultralytics/ultralytics/blob/main/LICENSE" target="_blank" rel="noopener">Ultralytics AGPL-3.0 license</a>
+    for use that complies with its open-source terms, while commercial use beyond those terms requires a paid
+    <a href="https://www.ultralytics.com/license" target="_blank" rel="noopener">Ultralytics Enterprise License</a>.
+    It is your responsibility to ensure your use is appropriately licensed.
+  </span>
+</div>
+
+<!-- Workflow heading -->
+<header class="plugin-page-heading">
+  <h1>YOLO</h1>
+  <p>Train a model or collect predictions on your tables.</p>
+</header>
+
+<!-- ── Presets: the SDK's preset bar renders here (_tlcPluginPresets) ── -->
+<div id="tr-presets"></div>
+
+    <!-- ── Input Tables ──────────────────────────────────── -->
+    <div class="plugin-workflow-grid">
+    <div class="plugin-wide card mb-16">
+      <div class="card-header">
+        <div class="card-title"><span class="plugin-section-number">1</span> Data</div>
+      </div>
+      <div class="card-body">
+
+        <!-- Tables -->
+        <div class="plugin-table-pair">
+        <div class="form-group">
+          <!-- The Hub's required style: a red * on the label, a red wash while the field is empty. -->
+          <label class="form-label required" for="tr-train-url">Training table</label>
+          <tlc-table-field id="tr-train-url" placeholder="Paste URL or click Browse…" required
+                           oninput="trOnTrainTableChange()"></tlc-table-field>
+          <div class="form-help">The task is detected from the table’s labels.</div>
+          <div id="tr-run-target-data-note" class="form-help" style="display:none"></div>
+          <div id="tr-image-copy-size-note" class="form-help" role="status" style="display:none"></div>
+        </div>
+        <div class="plugin-table-swap">
+          <button type="button" class="btn btn-ghost btn-sm" id="tr-swap-btn" onclick="trSwapUrls()"
+                  title="Swap train / val URLs" data-title="Swap train / val URLs"
+                  style="font-size:13px;padding:1px 6px;line-height:1">&#x21C5;</button>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="tr-val-url">Validation table <span class="text-muted">(optional)</span></label>
+          <tlc-table-field id="tr-val-url" placeholder="Paste URL or click Browse…"></tlc-table-field>
+          <div class="form-help">Leave empty to skip validation.</div>
+        </div>
+
+        </div><!-- /plugin-table-pair -->
+
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+          <input type="checkbox" id="tr-use-latest">
+          <label for="tr-use-latest" style="cursor:pointer;font-size:10px">
+            Use the latest table revision when the job starts
+          </label>
+        </div>
+
+        <!-- Detected Task -->
+        <div class="form-group">
+          <label class="form-label">Detected Task</label>
+          <div>
+            <span id="tr-task-badge" class="plugin-task-badge">--</span>
+            <span id="tr-task-detail" class="text-sm text-muted" style="margin-left:6px"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Step 3: YOLO Settings ─────────────────────────── -->
+    <div class="card mb-16">
+      <div class="card-header">
+        <div class="card-title"><span class="plugin-section-number">2</span> Model</div>
+      </div>
+      <div class="card-body">
+
+        <!-- Model + Mode — side by side -->
+        <div class="plugin-form-grid">
+          <div class="form-group">
+            <label class="form-label required" for="tr-model-select">Model</label>
+            <select id="tr-model-select" class="form-select" onchange="trOnModelChange()" required>
+              <option value="">-- Select a model --</option>
+            </select>
+            <div class="form-help">Choose a model and size. Smaller models use less memory and train faster.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mode</label>
+            <div class="segmented-control" role="group" aria-label="Mode">
+              <button type="button" class="btn btn-sm active" aria-pressed="true" id="tr-mode-train"
+                      onclick="trSetMode('train')">Train</button>
+              <button type="button" class="btn btn-sm" aria-pressed="false" id="tr-mode-collect"
+                      onclick="trSetMode('collect')">Collect</button>
+            </div>
+            <div class="text-sm text-muted" id="tr-mode-help" style="margin-top:3px">
+              Train a YOLO model with 3LC metrics collection.
+            </div>
+          </div>
+        </div>
+
+        <!-- Pretrained Model URL (fine-tune from existing checkpoint) -->
+        <div class="form-group" style="margin-top:8px">
+          <label class="form-label" for="tr-pretrained-url">Pretrained Model URL <span class="text-muted">(optional — fine-tune from existing checkpoint)</span></label>
+          <!-- SDK data-source widget (rendered at init): text input keeps id tr-pretrained-url,
+               plus a Browse… panel backed by the SDK's /browse route. -->
+          <div id="tr-pretrained-ds"></div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+          <input type="checkbox" id="tr-copy-model" checked>
+          <label for="tr-copy-model" style="cursor:pointer;font-size:10px">
+            Copy best model to run folder
+            <span class="text-muted">(store checkpoint alongside run data)</span>
+          </label>
+        </div>
+
+        <div class="form-group" style="margin-bottom:10px">
+          <label class="form-label" for="tr-workers">Worker Threads</label>
+          <input type="number" id="tr-workers" class="form-control" value="8" min="0" max="32" style="width:80px">
+          <div class="form-help">Number of dataloader worker threads. 0 = main thread only. Higher values speed up data loading on multi-core machines.</div>
+        </div>
+
+        <!-- Dynamic model params (YOLO Settings group renders here) -->
+        <div id="tr-params-container"></div>
+      </div>
+    </div>
+
+    <!-- ── Step 4: 3LC Settings ──────────────────────────── -->
+    <div class="card mb-16">
+      <div class="card-header">
+        <div class="card-title"><span class="plugin-section-number">3</span> Output &amp; metrics</div>
+      </div>
+      <div class="card-body">
+
+        <div class="plugin-form-grid">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label" for="tr-3lc-project">3LC Project</label>
+            <input type="text" id="tr-3lc-project" class="form-control" placeholder="Project from train table">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label" for="tr-run-name">Run Name</label>
+            <input type="text" id="tr-run-name" class="form-control" placeholder="Auto-generated if empty">
+          </div>
+        </div>
+
+        <!-- Dynamic 3LC Settings params render here -->
+        <div id="tr-3lc-settings"></div>
+
+        <!-- Actions -->
+        <div class="plugin-action-bar">
+          <button class="btn btn-primary" id="tr-train-btn" onclick="trStartTraining()"
+                  aria-describedby="tr-train-why">Start Ultralytics YOLO Training</button>
+        </div>
+        <!-- Why Start cannot run yet (trGate). Always one line high, so the page does not move as it comes and goes. -->
+        <div class="text-sm text-muted" id="tr-train-why" style="margin-top:6px;line-height:1.5;min-height:1.5em"></div>
+      </div>
+    </div>
+
+    <!-- ── Queue & Progress ─────────────────────────────── -->
+    <div class="card mb-16">
+      <div class="card-header">
+        <div class="card-title">Job status</div>
+      </div>
+      <div class="card-body">
+
+        <!-- Current job -->
+        <div id="tr-current-job" style="display:none">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span id="tr-current-label" class="text-sm" style="font-weight:600">--</span>
+            <span id="tr-current-status" class="tr-queue-status plugin-status-running">running</span>
+            <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+              <span id="tr-current-open-link"></span>
+              <button class="btn btn-danger btn-sm" id="tr-stop-btn" style="display:none" onclick="trStopCurrentJob()">Stop</button>
+            </span>
+          </div>
+          <div id="tr-current-info" class="tr-job-info" style="margin-bottom:6px"></div>
+          <div style="margin-bottom:4px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">
+              <span id="tr-epoch-label" class="text-sm">Epoch 0/0</span>
+              <span id="tr-pct-label" class="text-sm" style="font-weight:600">0%</span>
+            </div>
+            <div class="plugin-progress-wrap">
+              <div id="tr-epoch-bar" class="plugin-progress-bar" style="width:0%"></div>
+            </div>
+          </div>
+          <div id="tr-timing" class="text-sm text-muted" style="margin-bottom:6px"></div>
+          <div id="tr-current-metrics" class="tr-metrics"></div>
+        </div>
+        <div id="tr-no-current" class="text-sm text-muted">No active job.</div>
+
+        <!-- Pending queue -->
+        <div id="tr-queue-section" style="display:none;margin-top:14px">
+          <div class="text-sm" style="font-weight:600;margin-bottom:6px">Pending</div>
+          <div id="tr-queue-list"></div>
+        </div>
+
+        <!-- Recent completed -->
+        <div id="tr-completed-section" style="display:none;margin-top:14px">
+          <div class="text-sm" style="font-weight:600;margin-bottom:6px">Recent</div>
+          <div id="tr-completed-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Log ──────────────────────────────────────────── -->
+    <div class="card mb-16">
+      <div class="card-header">
+        <div class="card-title">Log</div>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div id="tr-log" class="plugin-log-area tr-log-area"></div>
+      </div>
+    </div>
+</div><!-- /plugin-workflow-grid -->
+
+</div>
+
+<script>{{asset:app.js}}</script>
