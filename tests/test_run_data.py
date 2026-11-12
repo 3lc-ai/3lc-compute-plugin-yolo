@@ -4,13 +4,8 @@
 
 from __future__ import annotations
 
-import sys
+import tomllib
 from pathlib import Path
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover - Python 3.10
-    import tomli as tomllib
 
 PACKAGE = Path(__file__).resolve().parents[1] / "src" / "tlc_plugin_yolo"
 
