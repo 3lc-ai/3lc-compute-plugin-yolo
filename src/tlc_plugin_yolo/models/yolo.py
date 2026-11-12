@@ -14,6 +14,7 @@ from tlc_plugin_sdk.shared.url_utils import normalize_url
 from tlc_ultralytics import YOLO
 from tlc_ultralytics.settings import Settings
 
+from tlc_plugin_yolo.artifacts import cached_model, new_output_dir, record_output_dir
 from tlc_plugin_yolo.models import register_model
 from tlc_plugin_yolo.models.base import BaseTrainingModel, unsupported_param_ids
 
@@ -495,6 +496,18 @@ class YOLOModel(BaseTrainingModel):
                 model_name = pretrained_url
         copy_model_to_run = _to_bool(params.get("copy_model_to_run", True))
 
+        output_dir = new_output_dir()
+        output_overrides = {"project", "name", "save_dir"}.intersection(extra_kwargs)
+        planned_output = Path(
+            extra_kwargs.get(
+                "save_dir",
+                Path(str(extra_kwargs.get("project", output_dir.parent)))
+                / str(extra_kwargs.get("name", output_dir.name)),
+            )
+        )
+        on_status(f"Planned Ultralytics output folder on this worker: {planned_output.resolve()}")
+        if not pretrained_url:
+            model_name = cached_model(model_name)
         on_status(f"Loading YOLO model: {model_name}")
         model = YOLO(model_name, task=yolo_task)
 
@@ -505,6 +518,7 @@ class YOLOModel(BaseTrainingModel):
             # Capture the 3LC run reference as soon as training starts
             if hasattr(trainer, "_run"):
                 _state["tlc_run"] = trainer._run
+                record_output_dir(trainer._run, Path(trainer.save_dir), on_status)
 
         def _on_train_epoch_end(trainer: Any) -> None:
             if is_cancelled():
@@ -577,8 +591,12 @@ class YOLOModel(BaseTrainingModel):
                 "workers": workers,
                 "device": device,
                 "settings": settings,
+                "project": str(output_dir.parent),
+                "name": output_dir.name,
                 **extra_kwargs,
             }
+            if not output_overrides:
+                train_kwargs.setdefault("exist_ok", True)
             if skip_val:
                 train_kwargs["val"] = False
             results = model.train(**train_kwargs)
@@ -646,6 +664,12 @@ class YOLOModel(BaseTrainingModel):
                 return {"run_url": run_url, "tlc_run": tlc_run, "final_metrics": {}}
             traceback.print_exc()
             raise
+        finally:
+            trainer = getattr(model, "trainer", None)
+            actual_output = getattr(trainer, "save_dir", None)
+            run = _state["tlc_run"] or getattr(trainer, "_run", None)
+            if actual_output is not None:
+                record_output_dir(run, Path(actual_output), on_status)
 
     def collect(self, tables: dict[str, Any], params: dict[str, Any], callbacks: dict[str, Any]) -> dict[str, Any]:
         """Run metrics collection only (no training)."""
@@ -729,6 +753,10 @@ class YOLOModel(BaseTrainingModel):
             except Exception:
                 model_name = pretrained_url
 
+        output_dir = new_output_dir()
+        on_status(f"Ultralytics outputs on this worker: {output_dir}")
+        if not pretrained_url:
+            model_name = cached_model(model_name)
         on_status(f"Loading YOLO model: {model_name}")
         model = YOLO(model_name, task=yolo_task)
 
@@ -808,6 +836,9 @@ class YOLOModel(BaseTrainingModel):
                 imgsz=imgsz,
                 device=device,
                 progress_callback=_reduction_progress,
+                project=str(output_dir.parent),
+                name=output_dir.name,
+                exist_ok=True,
             )
 
             run_url = None
@@ -825,6 +856,10 @@ class YOLOModel(BaseTrainingModel):
                 return {"run_url": run_url, "final_metrics": {}}
             traceback.print_exc()
             raise
+        finally:
+            run = getattr(model, "tlc_run", None)
+            if run is not None:
+                record_output_dir(run, output_dir, on_status)
 
 
 def _to_bool(val: Any) -> bool:
