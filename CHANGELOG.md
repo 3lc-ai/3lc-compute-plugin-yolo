@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed Ultralytics training and collection outputs being lost when the plugin is removed or
+  reinstalled. Default outputs use durable, unique worker-local folders recorded in the 3LC Run;
+  named pretrained checkpoints use a separate reusable cache.
 - **Table-read errors explain what failed and keep the backend cause visible.** The form explains
   that image aliases do not relocate table metadata or initialize storage access, and Start stays
   disabled with that reason. Model-discovery failures and their setup hint also appear beside the
