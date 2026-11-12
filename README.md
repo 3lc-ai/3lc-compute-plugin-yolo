@@ -50,7 +50,7 @@ The plugin contract and author guide live in
 
 ## Staged SDK and publishing
 
-The staged `3lc` core and SDK 0.5 are not on PyPI yet; `pyproject.toml` routes both to the private
+The staged `3lc` core and SDK 0.7 are not on PyPI yet; `pyproject.toml` routes both to the private
 staging index. Set the index credentials in your shell before `uv sync --locked --group dev`
 (keep tokens out of source files); nothing else is needed:
 
