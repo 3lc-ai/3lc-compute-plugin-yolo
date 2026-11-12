@@ -16,7 +16,7 @@ name = "3lc-compute-plugin-yolo"
 version = "0.3.0"
 description = "Ultralytics YOLO training plugin for the 3LC compute service."
 readme = "README-wheel.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 # AGPL-3.0: this plugin links 3lc-ultralytics (Ultralytics YOLO, AGPL-3.0), so a distributed
 # work must itself be AGPL-3.0. Full text in ./LICENSE.
 license = "AGPL-3.0-only"
@@ -26,7 +26,7 @@ license = "AGPL-3.0-only"
 # direct requirement that names one. Relax it to a release floor once that core ships.
 dependencies = [
     "3lc>=3.5.0.dev149866,<4.0.0",
-    "3lc-compute-plugin-sdk>=0.5.5,<0.7.0",
+    "3lc-compute-plugin-sdk>=0.7.0,<0.8.0",
 ]
 
 # The plugin's heavy stack — installed ONLY into the provisioned venv (uv sync --extra yolo, or
@@ -72,7 +72,7 @@ explicit = true
 [tool.uv.sources]
 torch = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
 torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
-# The staged core and SDK 0.5 are not on PyPI yet; drop these lines once they are.
+# The staged core and SDK 0.7 are not on PyPI yet; drop these lines once they are.
 "3lc" = { index = "staging" }
 3lc-compute-plugin-sdk = { index = "staging" }
 
@@ -80,7 +80,7 @@ torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sy
 # linting must not require resolving the heavy ML stack.
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 exclude = [".git", ".mypy_cache", ".ruff_cache", ".venv", "build", "dist"]
 
 [tool.ruff.lint]
