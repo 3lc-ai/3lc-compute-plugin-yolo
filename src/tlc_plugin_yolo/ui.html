@@ -69,7 +69,7 @@
           <tlc-table-field id="tr-train-url" placeholder="Paste URL or click Browse…" required
                            oninput="trOnTrainTableChange()"></tlc-table-field>
           <div class="form-help">The task is detected from the table’s labels.</div>
-          <div id="tr-run-target-data-note" class="form-help" style="display:none"></div>
+          <div id="tr-run-target-data-note" class="form-help" role="status" style="display:none"></div>
           <div id="tr-image-copy-size-note" class="form-help" role="status" style="display:none"></div>
         </div>
         <div class="plugin-table-swap">
@@ -79,8 +79,10 @@
         </div>
         <div class="form-group">
           <label class="form-label" for="tr-val-url">Validation table <span class="text-muted">(optional)</span></label>
-          <tlc-table-field id="tr-val-url" placeholder="Paste URL or click Browse…"></tlc-table-field>
+          <tlc-table-field id="tr-val-url" placeholder="Paste URL or click Browse…"
+                           oninput="trCheckTableAgainstRunTarget()"></tlc-table-field>
           <div class="form-help">Leave empty to skip validation.</div>
+          <div id="tr-val-run-target-data-note" class="form-help" role="status" style="display:none"></div>
         </div>
 
         </div><!-- /plugin-table-pair -->
@@ -749,26 +751,63 @@ var _detectDebounce = null;
 // Selection-time data check against the host's "Run on:" target: warn the moment a
 // table is picked, not when Train is pressed. Optional host API — feature-detected,
 // silent on frontends that predate it.
-function trCheckTableAgainstRunTarget() {
-  var note = document.getElementById("tr-run-target-data-note");
-  if (!note || !window.PLUGIN_API || typeof PLUGIN_API.checkDataForRunTarget !== "function") return;
-  // Newer hosts annotate EVERY table input themselves (train and val alike) — leave the
-  // note to them so it is not shown twice. This path only serves older frontends.
-  if (PLUGIN_API.hostChecksTableInputs) { note.style.display = "none"; return; }
-  var url = document.getElementById("tr-train-url").value.trim();
-  var target = (typeof PLUGIN_API.getRunTarget === "function") ? PLUGIN_API.getRunTarget() : { target: "local" };
-  if (!url || target.target !== "node") { note.style.display = "none"; return; }
-  PLUGIN_API.checkDataForRunTarget(url).then(function (verdict) {
-    if (document.getElementById("tr-train-url").value.trim() !== url) return;  // stale
+var _trTableChecks = {};
+function trCheckTableAgainstRunTarget(force) {
+  return Promise.all([
+    trCheckTableField("tr-train-url", "tr-run-target-data-note", force),
+    trCheckTableField("tr-val-url", "tr-val-run-target-data-note", force),
+  ]);
+}
+function trCheckTableField(fieldId, noteId, force) {
+  var field = document.getElementById(fieldId);
+  var note = document.getElementById(noteId);
+  if (!field || !note) return;
+  var previous = _trTableChecks[fieldId];
+  var api = window.PLUGIN_API;
+  var target = (api && typeof api.getRunTarget === "function" && api.getRunTarget()) || { target: "local" };
+  var url = field.value.trim();
+  // Framed hosts may leave annotations to the plugin. Respect hosts that supply their own.
+  if (!url || target.target !== "node" || !api || api.hostChecksTableInputs ||
+      typeof api.checkDataForRunTarget !== "function") {
+    delete _trTableChecks[fieldId];
+    note.style.display = "none";
+    return;
+  }
+  var key = JSON.stringify([target.target, target.node_id, url]);
+  // Editing one table should not repeatedly scan the other. Match the host's 30s verdict lifetime.
+  if (!force && previous && previous.key === key &&
+      (previous.pending || Date.now() - previous.at < 30000)) return previous.promise;
+  var check = { key: key, pending: true, at: Date.now() };
+  _trTableChecks[fieldId] = check;
+  function current() {
+    var now = (api.getRunTarget && api.getRunTarget()) || { target: "local" };
+    return _trTableChecks[fieldId] === check && field.value.trim() === url &&
+      JSON.stringify([now.target, now.node_id, url]) === key;
+  }
+  note.textContent = "Checking data access on the selected node…";
+  note.style.color = "var(--text-muted)";
+  note.style.display = "";
+  check.promise = Promise.resolve().then(function () {
+    return api.checkDataForRunTarget(url);
+  }).then(function (verdict) {
+    if (!current()) return;
+    if (verdict.retry) delete _trTableChecks[fieldId];
     if (verdict.ok && !verdict.notes.length) { note.style.display = "none"; return; }
-    note.textContent = (verdict.ok ? "⚠️ " : "❌ This will NOT run on the GPU node: ") +
+    note.textContent = (verdict.ok ? "⚠️ " : "❌ This table cannot be used on the selected node: ") +
       verdict.notes.join(" ");
     note.style.color = verdict.ok ? "var(--warning, #d97706)" : "var(--error, #dc2626)";
     note.style.display = "";
-  }).catch(function () { note.style.display = "none"; });
+  }).catch(function () {
+    if (!current()) return;
+    delete _trTableChecks[fieldId];  // a transient failure can be retried
+    note.textContent = "Data access could not be checked. It will be checked again before the run starts.";
+    note.style.color = "var(--warning, #d97706)";
+    note.style.display = "";
+  }).finally(function () { check.pending = false; });
+  return check.promise;
 }
 if (window.PLUGIN_API && typeof PLUGIN_API.onRunTargetChange === "function") {
-  PLUGIN_API.onRunTargetChange(trCheckTableAgainstRunTarget);
+  PLUGIN_API.onRunTargetChange(function () { trCheckTableAgainstRunTarget(true); });
 }
 
 function trOnTrainTableChange() {
