@@ -268,8 +268,6 @@ var trModelDiscoveryError = ""; // why the worker could not initialize the model
 var trModelDiscoveryHint = "";
 var _trSubmitting = false;    // Start was pressed and the run request has not answered yet
 
-var _STORAGE_KEY = "yolo_selected_project";  // the old config bar's key; the preset bar honours it once
-
 // Compute Service URL from PLUGIN_API bridge
 var COMPUTE_URL = PLUGIN_API.getConfig("compute_service_url");
 
@@ -546,15 +544,17 @@ function trDefaultFormData() {
 }
 
 // The tables the plugin was opened with: ?train=&val= from the DAG's Train link, or the action
-// button's tables. They replace the preset's inputs for the page's life (SDK guide → Presets).
+// button's tables. External inputs start an unsaved default setup; explicit preset picks restore the saved setup.
 function trContextInputs() {
   var ctx = (typeof PLUGIN_API !== "undefined" && PLUGIN_API.context) ? PLUGIN_API.context : {};
   var urls = ctx.resourceUrls || [];
   var q = new URLSearchParams(window.location.search);
+  var project = ctx.projectName || q.get("project") || "";
   if (q.has("train") || q.has("val")) {
-    return { train_table_url: q.get("train") || "", val_table_url: q.get("val") || "" };
+    return { train_table_url: q.get("train") || "", val_table_url: q.get("val") || "", project_name: project };
   }
-  if (urls.length) return { train_table_url: urls[0], val_table_url: urls[1] || "" };
+  if (urls.length) return { train_table_url: urls[0], val_table_url: urls[1] || "", project_name: project };
+  if (project) return {project_name: project};
   return null;
 }
 
@@ -626,7 +626,6 @@ function trInitPresets() {
     contextInputs: trContextInputs,
     autoName: trAutoName,
     summary: trPresetSummary,
-    legacyKey: _STORAGE_KEY,
   });
   return trPresets.init();
 }
@@ -1339,6 +1338,8 @@ function trStartTraining() {
         trLog(_trNotStartedMessage(trainResp));
         return;
       }
+      document.getElementById("tr-run-name").value = "";
+      if (trPresets && typeof trPresets.submitted === "function") trPresets.submitted();
       trLog("YOLO job submitted: " + trainResp.job_id);
       trShowCurrentJob(trainResp.job_id, _trJobLabel(data));
       trTrackJob(trainResp.job_id);
@@ -1713,8 +1714,7 @@ function trSwapUrls() {
   document.getElementById("tr-page").addEventListener("change", trScheduleImageCopyCheck);
   trLoadModels(function() {});
   trGate();
-  // The preset bar opens the form: as it was last left in this browser, else on Default
-  // settings, with the tables the plugin was opened with (trContextInputs) in place of its own.
+  // Start fresh for external inputs, or resume a draft when opened without them.
   trInitPresets();
 })();
 </script>
