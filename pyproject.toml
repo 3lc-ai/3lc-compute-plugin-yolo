@@ -26,7 +26,7 @@ license = "AGPL-3.0-only"
 # direct requirement that names one. Relax it to a release floor once that core ships.
 dependencies = [
     "3lc>=3.5.0.dev149866,<4.0.0",
-    "3lc-compute-plugin-sdk>=0.7.0,<0.8.0",
+    "3lc-compute-plugin-sdk>=0.7.1,<0.8.0",
 ]
 
 # The plugin's heavy stack — installed ONLY into the provisioned venv (uv sync --extra yolo, or
@@ -72,9 +72,10 @@ explicit = true
 [tool.uv.sources]
 torch = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
 torchvision = { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
-# The staged core and SDK 0.7 are not on PyPI yet; drop these lines once they are.
+# The staged core is not on PyPI yet; drop this source once it is released.
 "3lc" = { index = "staging" }
-3lc-compute-plugin-sdk = { index = "staging" }
+# Pin the shared preset fix until SDK 0.7.1 is published (SDK PR #102).
+3lc-compute-plugin-sdk = { git = "https://github.com/3lc-ai/3lc-compute-plugin-sdk", rev = "e862b8c1164ebd5845a5878a2b1c5ed81e1aefbc" }
 
 # Ruff config mirrors 3lc-compute-plugin-sdk for a consistent house style. CI runs ruff standalone (uvx) —
 # linting must not require resolving the heavy ML stack.

@@ -26,11 +26,12 @@ def detect_task(table_url: str) -> dict[str, Any]:
     try:
         import tlc
         from tlc_plugin_sdk.shared.modality import detect_modality_from_table
+        from tlc_plugin_sdk.shared.table_context import table_project_context
 
         table = tlc.Table.from_url(table_url)
         info = detect_modality_from_table(table)
         task = _modality_to_yolo_task(info.modality)
-        project_name = getattr(table, "project_name", "") or ""
+        project = table_project_context(table)
     except Exception as e:
         error = f"Could not load table: {e}"
         return {
@@ -50,7 +51,7 @@ def detect_task(table_url: str) -> dict[str, Any]:
         "task": task,
         "models": _models_for_task(task),
         "details": f"Detected task: {task}",
-        "project_name": project_name,
+        **project,
     }
 
 

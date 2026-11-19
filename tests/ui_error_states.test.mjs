@@ -20,7 +20,7 @@ function sliceBetween(start, end) {
 const uiFunctions = [
   sliceBetween("// ── Start: disabled until it can run", "// ── Mode Toggle"),
   sliceBetween("function trShowTask(badge, detail)", "// Fill the form from a preset's values."),
-  sliceBetween("function trDetectTask()", "// ── Models ───────────────────────────────────────────────────"),
+  sliceBetween("function trDetectTask(resolvedTable)", "// ── Models ───────────────────────────────────────────────────"),
   sliceBetween("function trLoadModels(callback)", "function trOnModelChange()"),
 ].join("\n");
 
@@ -64,6 +64,7 @@ function harness({ post, getJson }) {
   modelSelect.parentNode = modelContainer;
 
   const context = {
+    _trTableRead: 0, trPresets: null,
     console,
     Promise,
     document: {
