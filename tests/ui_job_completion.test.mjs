@@ -142,18 +142,23 @@ test("a late seed response cannot restore running after the tracked job has comp
 });
 
 
-test("a successful submission labels and tracks the returned job without a global config", async () => {
+for (const hasSubmitted of [false, true]) {
+test(`an accepted job is tracked with ${hasSubmitted ? "new" : "older"} preset helpers`, async () => {
   const h = harness();
   const data = { mode: "train", run_name: "Fire test", model_name: "yolov8n.pt" };
-  let submits = 0;
+  let submits = 0, draftsCleared = 0;
+  h.element("tr-run-name").value = "Fire test";
   Object.assign(h.context, {
-    trPresets: null, _trSubmitting: false, trStartBlocker: () => "", trGate: () => {},
+    trPresets: hasSubmitted ? { submitted: () => { draftsCleared++; } } : {},
+    _trSubmitting: false, trStartBlocker: () => "", trGate: () => {},
     trCollectFormData: () => data, trBuildRunBody: () => ({ project_config: data }),
   });
   h.context.PluginJobs.start = async () => { submits++; return { job_id: "submitted-job" }; };
   h.context.trStartTraining();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(submits, 1);
+  assert.equal(draftsCleared, hasSubmitted ? 1 : 0);
+  assert.equal(h.element("tr-run-name").value, "");
   assert.equal(h.element("tr-current-label").textContent, "Fire test (yolov8n · Train)");
   assert.equal(h.subscriptions.length, 1);
   assert.equal(h.subscriptions[0].id, "submitted-job");
@@ -161,3 +166,4 @@ test("a successful submission labels and tracks the returned job without a globa
   h.jobUpdate({ id: "submitted-job", status: "completed" });
   assert.equal(h.element("tr-current-status").textContent, "completed");
 });
+}
