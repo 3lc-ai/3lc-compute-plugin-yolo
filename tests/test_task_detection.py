@@ -23,6 +23,13 @@ def _mock_table_reader(monkeypatch, *, fail: Exception | None = None, modality: 
     shared = ModuleType("tlc_plugin_sdk.shared")
     modality_module = ModuleType("tlc_plugin_sdk.shared.modality")
     modality_module.detect_modality_from_table = lambda _table: SimpleNamespace(modality=modality)
+    context_module = ModuleType("tlc_plugin_sdk.shared.table_context")
+    context_module.table_project_context = lambda _table: {
+        "project_name": "test project",
+        "project_url": "s3://bucket/test project",
+        "project_root_url": "s3://bucket",
+    }
+    monkeypatch.setitem(sys.modules, "tlc_plugin_sdk.shared.table_context", context_module)
     monkeypatch.setitem(sys.modules, "tlc", tlc)
     monkeypatch.setitem(sys.modules, "tlc_plugin_sdk", sdk)
     monkeypatch.setitem(sys.modules, "tlc_plugin_sdk.shared", shared)
@@ -49,3 +56,11 @@ def test_readable_table_with_unrecognized_modality_is_not_a_read_error(monkeypat
     assert result["task"] == "unknown"
     assert "error" not in result
     assert result["details"] == "Detected task: unknown"
+
+
+def test_metadata_includes_source_project_identity(monkeypatch) -> None:
+    _mock_table_reader(monkeypatch, modality="detection")
+    result = detect_task("s3://bucket/train")
+    assert result["project_name"] == "test project"
+    assert result["project_url"] == "s3://bucket/test project"
+    assert result["project_root_url"] == "s3://bucket"

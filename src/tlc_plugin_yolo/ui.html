@@ -584,7 +584,8 @@ function trShowTask(badge, detail) {
 
 // Fill the form from a preset's values. Resolves once the model's parameters are rendered, so the
 // preset bar compares the form only then.
-function trApplyFormData(values) {
+function trApplyFormData(values, resolvedTable) {
+  ++_trTableRead; clearTimeout(_detectDebounce);
   values = values || {};
   var params = values.params || {};
   document.getElementById("tr-run-name").value = values.run_name || "";
@@ -604,10 +605,13 @@ function trApplyFormData(values) {
   var model = values.model_name || "";
   // The train table decides the task, and the 3LC project when none is set; the preset's own task
   // stands while the table cannot be read (Start then says so).
-  var detect = document.getElementById("tr-train-url").value.trim() ? trDetectTask() : Promise.resolve(false);
+  var detect = document.getElementById("tr-train-url").value.trim() ? trDetectTask(resolvedTable) : Promise.resolve(false);
+  var read = _trTableRead;
   return detect.then(function() {
+    if (read !== _trTableRead) return;
     return new Promise(function(resolve) {
       trPopulateModelDropdown(detectedTask, function() {
+        if (read !== _trTableRead) { resolve(); return; }
         var chosen = document.getElementById("tr-model-select").value;
         resolve(trLoadModelParams(chosen, chosen === model ? params : {}));
       }, model);
@@ -626,6 +630,7 @@ function trInitPresets() {
     defaults: trDefaultFormData,
     inputs: ["train_table_url", "val_table_url"],
     contextInputs: trContextInputs,
+    tableContext: {input: "train_table_url", project: "project_name", preserve: ["mode"]},
     autoName: trAutoName,
     summary: trPresetSummary,
   });
@@ -809,7 +814,9 @@ if (window.PLUGIN_API && typeof PLUGIN_API.onRunTargetChange === "function") {
   PLUGIN_API.onRunTargetChange(function () { trCheckTableAgainstRunTarget(true); });
 }
 
+var _trTableRead = 0;
 function trOnTrainTableChange() {
+  _trTableRead++;
   // Another table: its task is unknown until detection answers, and the previous table's must not
   // ride along in a run. Start waits for the answer, debounce included.
   var url = document.getElementById("tr-train-url").value.trim();
@@ -831,9 +838,10 @@ function trOnTrainTableChange() {
   }, 500);
 }
 
-// Detect the task from the train table; resolves true when it answered. Fills the 3LC project when
-// none is set. A table that cannot be read leaves detectedTask as it is and sets trTaskError.
-function trDetectTask() {
+// Detect the task and source project. Manual table changes go through the shared preset controller;
+// applying a saved setup preserves its explicit destination. A table that cannot be read leaves detectedTask as it is and sets trTaskError.
+function trDetectTask(resolvedTable) {
+  var read = ++_trTableRead;
   var url = document.getElementById("tr-train-url").value.trim();
   trTaskError = "";
   if (!url) {
@@ -847,7 +855,7 @@ function trDetectTask() {
   trShowTask("detecting...", "");
   trGate();
   // An answer for a table no longer in the field is dropped: that field's own detection answers.
-  var current = function() { return document.getElementById("tr-train-url").value.trim() === url; };
+  var current = function() { return read === _trTableRead && document.getElementById("tr-train-url").value.trim() === url; };
   var failed = function(error) {
     trDetecting = false;
     trTaskError = error;
@@ -855,21 +863,27 @@ function trDetectTask() {
     trGate();
     return false;
   };
-  return _trPost("/api/plugins/yolo/detect-task", { url: url })
+  return (resolvedTable && resolvedTable.url === url ? Promise.resolve(resolvedTable.info)
+      : _trPost("/api/plugins/yolo/detect-task", { url: url }))
     .then(function(data) {
       if (!current()) return false;
       if (!data || data.error || !data.task) {
         return failed(String((data && (data.details || data.error || data.detail)) || "No task in the answer."));
       }
-      trDetecting = false;
-      detectedTask = data.task;
-      trShowTask(data.task, data.details || "");
-      var projInput = document.getElementById("tr-3lc-project");
-      if (data.project_name && !projInput.value.trim()) {
-        projInput.value = data.project_name;
-      }
-      trGate();
-      return true;
+      var transition = trPresets && trPresets.tableResolved
+        ? trPresets.tableResolved(url, data) : Promise.resolve(false);
+      return transition.then(function(handled) {
+        if (handled || !current()) return false;
+        trDetecting = false;
+        detectedTask = data.task;
+        trShowTask(data.task, data.details || "");
+        var projInput = document.getElementById("tr-3lc-project");
+        if (data.project_name && !projInput.value.trim()) {
+          projInput.value = data.project_name;
+        }
+        trGate();
+        return true;
+      });
     })
     .catch(function(e) {
       return current() ? failed(String(e)) : false;
@@ -893,7 +907,7 @@ function trLoadModels(callback) {
 function trPopulateModelDropdown(taskType, onReady, wanted) {
   trLoadModels(function(models) {
     var select = document.getElementById("tr-model-select");
-    var prev = wanted || select.value;
+    var prev = wanted !== undefined ? wanted : select.value;
     select.innerHTML = '<option value="">-- Select a model --</option>';
 
     var compatible = [];

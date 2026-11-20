@@ -92,17 +92,13 @@ umap = [
 
 [[package]]
 name = "3lc-compute-plugin-sdk"
-version = "0.7.0.20261112114242.59.1"
-source = { registry = "https://pypi.3lc.ai/repositories/prereleases/" }
+version = "0.7.1"
+source = { git = "https://github.com/3lc-ai/3lc-compute-plugin-sdk?rev=e862b8c1164ebd5845a5878a2b1c5ed81e1aefbc#e862b8c1164ebd5845a5878a2b1c5ed81e1aefbc" }
 dependencies = [
     { name = "3lc", extra = ["pandas"] },
     { name = "litestar" },
     { name = "multidict" },
     { name = "uvicorn" },
-]
-sdist = { url = "https://pypi.3lc.ai/repositories/prereleases/3lc-compute-plugin-sdk/3lc_compute_plugin_sdk-0.7.0.20261112114242.59.1.tar.gz" }
-wheels = [
-    { url = "https://pypi.3lc.ai/repositories/prereleases/3lc-compute-plugin-sdk/3lc_compute_plugin_sdk-0.7.0.20261112114242.59.1-py3-none-any.whl" },
 ]
 
 [[package]]
@@ -133,7 +129,7 @@ dev = [
 requires-dist = [
     { name = "3lc", specifier = ">=3.5.0.dev149866,<4.0.0", index = "https://pypi.3lc.ai/repositories/prereleases/" },
     { name = "3lc", extras = ["pacmap", "umap"], marker = "extra == 'yolo'", specifier = ">=3.5.0.dev149866,<4.0.0", index = "https://pypi.3lc.ai/repositories/prereleases/" },
-    { name = "3lc-compute-plugin-sdk", specifier = ">=0.7.0,<0.8.0", index = "https://pypi.3lc.ai/repositories/prereleases/" },
+    { name = "3lc-compute-plugin-sdk", git = "https://github.com/3lc-ai/3lc-compute-plugin-sdk?rev=e862b8c1164ebd5845a5878a2b1c5ed81e1aefbc" },
     { name = "3lc-ultralytics", marker = "extra == 'yolo'", specifier = ">=0.5.4" },
     { name = "torch", marker = "(sys_platform == 'linux' and extra == 'yolo') or (sys_platform == 'win32' and extra == 'yolo')", index = "https://download.pytorch.org/whl/cu126" },
     { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32' and extra == 'yolo'" },
