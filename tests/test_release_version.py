@@ -15,7 +15,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "release_version.py"
-STAGED = "0.2.4.20260916090000.42.1"
+STAGED = "0.2.4.dev42"
 
 
 @pytest.fixture
@@ -39,6 +39,15 @@ def test_stamp_advances_every_plugin(release_tree: Path) -> None:
     assert len(manifests) == 1
     for path in [release_tree / "pyproject.toml", *manifests]:
         assert f'version = "{STAGED}"' in path.read_text()
+
+
+@pytest.mark.parametrize("version", ["0.2.4.20260916090000.42.1", "0.2.4rc1", "0.2.4.dev"])
+def test_stamp_refuses_other_version_shapes(release_tree: Path, version: str) -> None:
+    before = {path: path.read_bytes() for path in release_tree.rglob("*.toml")}
+    result = run_version(release_tree, "--stamp", version)
+    assert result.returncode != 0
+    assert "X.Y.Z.devN" in result.stderr
+    assert {path: path.read_bytes() for path in before} == before
 
 
 def test_drift_refuses_to_stamp_any_file(release_tree: Path) -> None:

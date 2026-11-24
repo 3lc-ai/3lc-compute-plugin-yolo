@@ -28,8 +28,8 @@ def check_sources(root: Path) -> str:
 
 def stamp(root: Path, version: str) -> None:
     """Stamp the project and its plugin manifests after validating the source tree."""
-    if not re.fullmatch(r"\d+\.\d+\.\d+(?:\.\d+)*", version):
-        msg = f"Expected a numeric release or POC build version, got {version!r}"
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:\.dev\d+)?", version):
+        msg = f"Expected a release version X.Y.Z or a staged build X.Y.Z.devN, got {version!r}"
         raise ValueError(msg)
     check_sources(root)
     project_path = root / "pyproject.toml"
