@@ -44,7 +44,8 @@ class BaseTrainingModel(abc.ABC):
         Args:
             tables: ``{"train": url, "val": url | None}``.
             params: Merged user parameters + internal ``_project_name``, ``_run_name``, ``_task_type``.
-            callbacks: ``{"on_epoch": fn, "on_status": fn, "is_cancelled": fn}``.
+            callbacks: ``{"on_epoch": fn, "on_run": fn, "on_status": fn, "is_cancelled": fn}``.
+                Call ``on_run(str(run.url))`` as soon as the run exists, before reporting progress.
 
         Returns:
             ``{"run_url": str | None, "final_metrics": dict}``.

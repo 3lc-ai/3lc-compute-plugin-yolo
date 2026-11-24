@@ -64,6 +64,8 @@ def test_explicit_paths_and_architectures_are_preserved(model: str) -> None:
 @pytest.fixture
 def training(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Any:
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    # These tests exercise artifact lifetime; device selection has its own hardware-probe tests.
+    monkeypatch.setattr("tlc_plugin_yolo.device.resolve_device", lambda requested: "cpu")
     run = SimpleNamespace(url="s3://project/run", set_parameters=lambda values: metadata.update(values))
     metadata: dict[str, Any] = {}
 

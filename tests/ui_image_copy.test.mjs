@@ -25,6 +25,27 @@ function harness(planRun = async () => ({})) {
 const copyPlan = (edge = 640) => ({ refs: [{ reach: 'choose', options: ['copy', 'on_node'] }],
   image_resize: { eligible: true, max_edge: edge, sample_sizes: [{ width: 4000, height: 3000 }], mismatched: true, enabled: false } });
 
+test('clearing Extra Arguments submits an explicit empty value even with a selected preset', () => {
+  const { ctx } = harness();
+  const extra = { dataset: { paramId: 'extra_args' }, type: 'text', value: 'cfg=None iou=0.3' };
+  const fields = new Map();
+  ctx.document = {
+    querySelectorAll: selector => selector.startsWith('#tr-params-container') ? [extra] : [],
+    getElementById: id => {
+      if (!fields.has(id)) fields.set(id, { value: '', checked: false });
+      return fields.get(id);
+    },
+  };
+  ctx.currentMode = 'train'; ctx.detectedTask = 'detection';
+  vm.runInContext(html.slice(html.indexOf('function trCollectFormData()'),
+    html.indexOf('// Shared copy planning consumes')), ctx);
+  assert.equal(ctx.trBuildRunBody().project_config.params.extra_args, 'cfg=None iou=0.3');
+  extra.value = '';
+  const body = JSON.parse(JSON.stringify(ctx.trBuildRunBody()));
+  assert.equal(body.project_id, 'preset-id');
+  assert.equal(body.project_config.params.extra_args, '');
+});
+
 test('effective image hint honors the last integer override without changing training params', () => {
   const { ctx, data } = harness();
   assert.equal(ctx.trEffectiveImageCopySize({}), 640);

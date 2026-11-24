@@ -63,3 +63,32 @@ Run the Release workflow manually for a verified build artifact. Set `publish=tr
 upload it to the private staging index; publishing is disabled by default. Distribution and manifest
 versions receive the same timestamp, run and attempt suffix. Public PyPI publishing remains
 a separate `v*` tag flow.
+
+
+### Reusing a run through MCP
+
+Call `yolo_form_from_run` with the exact `run_url` and the execution target (`node_id`,
+including `local`). The read-only tool returns `values` for the plugin's `set_form`
+action and any `warnings`. It starts no job and saves no preset. It reads one run's
+metadata without reading its tables, metrics rows, or model weights. Installed
+Ultralytics defaults are cached for the worker's lifetime; plugin upgrades replace
+that cache. The plugin serves this metadata without importing Torch or the YOLO
+training runtime. The first call can still include data-access initialization.
+
+Recorded forms are preserved. Legacy run parameters are mapped into dedicated
+controls; `extra_args` contains only supported training arguments that differ from
+the installed defaults. Optional nulls, old output paths, and export/prediction
+settings are omitted. Review warnings and `set_form` mismatches before starting a run.
+
+### UI and MCP execution contract
+
+The module UI and MCP call the same native routes and job implementation. The
+maintained configuration contract is `src/tlc_plugin_yolo/job_contract.py`;
+`mcp-tools.json` is generated package data, not a separate execution path.
+Regenerate it with `python -m tlc_plugin_yolo.job_contract` and verify it with
+`python -m tlc_plugin_yolo.job_contract --check`. Contract tests run as part of pytest.
+
+UI markup, styles and JavaScript live under the package's `ui/` directory.
+Run `python tools/build_ui.py` after editing them; `--check` verifies that the
+packaged `ui.html` matches. The served fragment stays self-contained. Native job
+validation applies the same defaults and field constraints advertised by MCP.

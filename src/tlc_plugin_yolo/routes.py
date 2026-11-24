@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from litestar import Response, get, post
 from litestar.params import FromPath
 
-from tlc_plugin_yolo.models import MODEL_REGISTRY
+from tlc_plugin_yolo.form_fields import MODEL_INFO, yolo_fields
 from tlc_plugin_yolo.project_store import TrainingProject
 from tlc_plugin_yolo.runtime import get_store
 from tlc_plugin_yolo.task_detection import detect_task
@@ -51,30 +51,36 @@ def get_route_handlers() -> list[BaseRouteHandler]:
 
     @get("/models", sync_to_thread=True)
     def list_models() -> list[dict[str, Any]]:
-        return [
-            {"name": m.name, "display_name": m.display_name, "supported_tasks": m.supported_tasks}
-            for m in MODEL_REGISTRY.values()
-        ]
+        return [dict(MODEL_INFO)]
 
     @get("/models/status", sync_to_thread=True)
     def models_status() -> dict[str, Any]:
-        """How many models loaded and, when none did, why — in words the UI can show.
+        """Report package availability and any failure observed during an actual job.
 
-        Found live: on a bare Ubuntu server OpenCV's wheel could not dlopen libGL, the
-        ultralytics import failed, and the model dropdown was simply empty.
+        Reading form metadata never imports the training implementation.
         """
-        from tlc_plugin_yolo import models as models_pkg
+        from importlib.metadata import PackageNotFoundError, version
 
-        error = models_pkg.DISCOVERY_ERROR
-        return {"count": len(MODEL_REGISTRY), "error": error, "hint": models_pkg.discovery_hint(error)}
+        from tlc_plugin_yolo.models import DISCOVERY_ERROR, discovery_hint
+
+        if DISCOVERY_ERROR:
+            return {"count": 0, "error": DISCOVERY_ERROR, "hint": discovery_hint(DISCOVERY_ERROR)}
+        try:
+            version("3lc-ultralytics")
+        except PackageNotFoundError:
+            return {
+                "count": 0,
+                "error": "Training dependencies are not installed",
+                "hint": "Install this plugin's [yolo] extra before training.",
+            }
+        return {"count": 1, "error": "", "hint": ""}
 
     # get_params() is model-defined (list or dict, heterogeneous by model) → Any body.
     @get("/models/{name:str}/params", sync_to_thread=True)
     def model_params(name: FromPath[str]) -> Response[Any]:
-        model = MODEL_REGISTRY.get(name)
-        if not model:
+        if name != MODEL_INFO["name"]:
             return Response({"error": f"Model '{name}' not found"}, status_code=404)
-        return Response(model.get_params())
+        return Response(yolo_fields())
 
     @post("/detect-task", status_code=200, sync_to_thread=True)
     def detect_task_route(data: dict[str, Any]) -> dict[str, Any]:
@@ -82,6 +88,15 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         if not url:
             return {"error": "url is required"}
         return detect_task(url)
+
+    @get("/form-from-run", sync_to_thread=True)
+    def form_from_run(run_url: str) -> Response[dict[str, Any]]:
+        from tlc_plugin_yolo.run_reuse import prepare_run_form
+
+        try:
+            return Response(prepare_run_form(run_url))
+        except ValueError as error:
+            return Response({"error": str(error)}, status_code=400)
 
     @get("/projects", sync_to_thread=True)
     def list_projects() -> list[dict[str, Any]]:
@@ -153,6 +168,8 @@ def get_route_handlers() -> list[BaseRouteHandler]:
 
     return [
         list_models,
+        models_status,
+        form_from_run,
         model_params,
         detect_task_route,
         list_projects,
