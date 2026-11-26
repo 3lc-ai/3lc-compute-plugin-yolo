@@ -1218,8 +1218,33 @@ function trShowCurrentJob(jobId, label) {
 }
 
 // Mark the current-job panel terminal (completed / failed / cancelled) from the
-// generic job record: the Open link targets the job's project (as the Queue card
-// does) and a failure shows the host's `error` text.
+// generic job record: Open run selects its exact run, and a failure shows the
+// host's `error` text. Automation setup preserves that run's saved recipe.
+function trRunDestination(job) {
+  var url=String(job.run_url || "").replace(/\/run\.json$/, "").replace(/\/$/, "");
+  var match=url.match(/^(.*)\/([^/]+)\/runs\/([^/]+)$/);
+  if (!match) return "";
+  return "/projects/"+encodeURIComponent(match[2])+"?root="+encodeURIComponent(match[1])+"&run="+encodeURIComponent(url)+"#runs";
+}
+function trResultActions(job) {
+  var href=trRunDestination(job);
+  if(!href)return "";
+  var html='<a href="'+href+'" class="btn btn-sm btn-secondary">Open run</a>';
+  if(job.status==='completed' && PLUGIN_API.automations && typeof PLUGIN_API.automations.configure==='function') {
+    html+=' <button type="button" class="btn btn-sm btn-secondary tr-automate-result" data-source-run="'+encodeURIComponent(job.run_url)+'" onclick="trAutomateRun(this)">Automate this →</button>';
+  }
+  return html;
+}
+function trAutomateRun(button) {
+  if(!PLUGIN_API.automations || button.disabled)return;
+  var source=decodeURIComponent(button.dataset.sourceRun).replace(/\/run\.json$/, '').replace(/\/$/, '');
+  var scope=source.match(/^(.*)\/([^/]+)\/runs\/([^/]+)$/);
+  if(!scope){trLog('This result has no saved project run.');return;}
+  button.disabled=true;
+  PLUGIN_API.automations.configure({templateId:'train_dataset_revisions',project:{name:scope[2],rootUrl:scope[1]},settings:{source_run_url:source}})
+    .catch(function(error){trLog('Could not open automation setup: '+error.message);})
+    .finally(function(){button.disabled=false;});
+}
 function trFinishCurrentJob(status, job) {
   job = job || {};
   var finishedId = job.id || _currentJobId;
@@ -1238,10 +1263,7 @@ function trFinishCurrentJob(status, job) {
   document.getElementById("tr-stop-btn").style.display = "none";
   var openEl = document.getElementById("tr-current-open-link");
   if (openEl) {
-    var projectName = job.project_name || "";
-    openEl.innerHTML = projectName
-      ? '<a href="/projects/' + encodeURIComponent(projectName) + '" class="btn btn-sm btn-secondary">Open</a>'
-      : "";
+    openEl.innerHTML = trResultActions(Object.assign({}, job, {status:status}));
   }
   var infoEl = document.getElementById("tr-current-info");
   if (infoEl) {
@@ -1268,9 +1290,7 @@ function _jobModelLabel(j) {
 }
 
 function _openProjectLink(j) {
-  var projectName = j.tlc_project_name || "";
-  if (!projectName) return "";
-  return '<a href="/projects/' + encodeURIComponent(projectName) + '" class="btn btn-sm btn-secondary">Open</a>';
+  return trResultActions(j);
 }
 
 function trRenderQueue(data) {

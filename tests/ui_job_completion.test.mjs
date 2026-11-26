@@ -77,7 +77,7 @@ test("a job first observed through telemetry is tracked once and completed from 
   assert.equal(h.subscriptions.length, 1);
   assert.equal(h.element("tr-current-status").textContent, "running", "last epoch alone is not completion");
 
-  h.jobUpdate({ id: "job-a", status: "completed", project_name: "Fire AWS", run_url: "s3://bucket/run" });
+  h.jobUpdate({ id: "job-a", status: "completed", project_name: "Fire AWS", run_url: "s3://bucket/projects/Fire AWS/runs/baseline" });
   assert.equal(h.element("tr-current-status").textContent, "completed");
   assert.equal(h.element("tr-epoch-label").textContent, "Completed");
   assert.equal(h.element("tr-epoch-bar").style.width, "100%");
@@ -167,3 +167,31 @@ test(`an accepted job is tracked with ${hasSubmitted ? "new" : "older"} preset h
   assert.equal(h.element("tr-current-status").textContent, "completed");
 });
 }
+
+test("completed run offers a scoped, review-only automation handoff on capable hosts", async () => {
+  const h=harness(),calls=[];
+  h.context.PLUGIN_API.automations={configure:async value=>{calls.push(value);return {opened:true};}};
+  const url='s3://bucket/projects/Fire AWS/runs/baseline';
+  const html=h.context.trResultActions({status:'completed',run_url:url});
+  assert.match(html,/Automate this/);assert.match(html,/#runs/);assert.match(html,/run=s3%3A/);
+  const button={dataset:{sourceRun:encodeURIComponent(url)},disabled:false};
+  h.context.trAutomateRun(button);await new Promise(setImmediate);
+  assert.equal(calls.length,1);assert.equal(calls[0].templateId,'train_dataset_revisions');
+  assert.equal(calls[0].settings.source_run_url,url);assert.equal(calls[0].project.name,'Fire AWS');assert.equal(calls[0].project.rootUrl,'s3://bucket/projects');assert.equal(button.disabled,false);
+  assert.doesNotMatch(h.context.trResultActions({status:'failed',run_url:url}),/Automate this/);
+  delete h.context.PLUGIN_API.automations;
+  assert.doesNotMatch(h.context.trResultActions({status:'completed',run_url:url}),/Automate this/);
+  assert.equal(h.context.trResultActions({status:'completed',project_name:'Fire AWS'}),'','never link vaguely to project');
+});
+
+test("automation setup suppresses duplicate clicks and recovers from rejection", async () => {
+  const h=harness(); let reject; let calls=0;
+  h.context.PLUGIN_API.automations={configure:()=>{calls++;return new Promise((resolve, fail)=>{reject=fail;});}};
+  const button={dataset:{sourceRun:encodeURIComponent('s3://bucket/projects/P/runs/a')},disabled:false};
+  h.context.trAutomateRun(button);h.context.trAutomateRun(button);
+  assert.equal(calls,1);assert.equal(button.disabled,true);
+  reject(new Error('Open this tool from a project'));
+  await new Promise(setImmediate);
+  assert.equal(button.disabled,false);
+  assert.match(h.logs.at(-1),/Open this tool from a project/);
+});

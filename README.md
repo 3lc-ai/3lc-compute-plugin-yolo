@@ -92,3 +92,20 @@ UI markup, styles and JavaScript live under the package's `ui/` directory.
 Run `python tools/build_ui.py` after editing them; `--check` verifies that the
 packaged `ui.html` matches. The served fragment stays self-contained. Native job
 validation applies the same defaults and field constraints advertised by MCP.
+
+### Automate a completed training configuration
+
+On a capable Hub, a completed run offers **Automate this** beside **Open run**.
+The plugin passes the saved run URL to the `train_dataset_revisions` template;
+the native read-only recipe tool supplies the exact recorded settings. The draft
+watches new versions of the same training dataset, prepares data on the selected
+node, and trains using the saved model/settings and a fixed validation revision.
+Existing dataset revisions are excluded at enablement. Incomplete legacy recipes
+and unresolved “latest” inputs require correction instead of silent defaults.
+
+Opening setup starts no job and enables no workflow. The user reviews and enables
+the draft in Hub. Manual training remains available without Flow. Result links
+select the exact run in its project's Runs view, including the storage root.
+
+This uses the optional SDK `automations` capability and the host's declared
+template catalog. See the [plugin author guide](https://github.com/3lc-ai/3lc-compute-plugin-sdk/blob/main/docs/automation-ready-plugins.md).
