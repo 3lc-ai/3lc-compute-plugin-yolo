@@ -98,6 +98,15 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         except ValueError as error:
             return Response({"error": str(error)}, status_code=400)
 
+    @get("/checkpoint-from-run", sync_to_thread=True)
+    def checkpoint_from_run(run_url: str) -> Response[dict[str, Any]]:
+        from tlc_plugin_yolo.run_reuse import saved_checkpoint
+
+        try:
+            return Response(saved_checkpoint(run_url))
+        except ValueError as error:
+            return Response({"error": str(error)}, status_code=400)
+
     @get("/projects", sync_to_thread=True)
     def list_projects() -> list[dict[str, Any]]:
         store = get_store()
@@ -170,6 +179,7 @@ def get_route_handlers() -> list[BaseRouteHandler]:
         list_models,
         models_status,
         form_from_run,
+        checkpoint_from_run,
         model_params,
         detect_task_route,
         list_projects,

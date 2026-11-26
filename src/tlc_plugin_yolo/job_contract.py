@@ -66,6 +66,22 @@ def tools() -> list[dict[str, Any]]:
             required=("train_table_url", "params.model"),
         ),
         {
+            "name": "checkpoint_from_run",
+            "title": "Read a trained YOLO checkpoint reference",
+            "description": (
+                "Resolve the saved model of a completed native training run. Returns checkpoint_url for collect; "
+                "never substitutes initialization weights. Does not read model bytes or start inference."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {"run_url": {"type": "string", "minLength": 1}},
+                "required": ["run_url"],
+                "additionalProperties": False,
+            },
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True},
+            "route": {"method": "GET", "path": "/checkpoint-from-run", "query": ["run_url"]},
+        },
+        {
             "name": "form_from_run",
             "title": "Reuse a YOLO run's settings",
             "description": "Read the native saved form and exact MCP arguments for a run, without starting a job.",

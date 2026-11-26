@@ -61,6 +61,57 @@ def test_explicit_paths_and_architectures_are_preserved(model: str) -> None:
     assert artifacts.cached_model(model) == model
 
 
+def test_remote_checkpoint_is_read_through_storage_and_not_reused_by_url(monkeypatch, tmp_path):
+    contents = [b"first-model"]
+
+    class Remote:
+        def to_absolute(self):
+            return self
+
+        def __fspath__(self):
+            message = "Cloud storage is not a local path"
+            raise TypeError(message)
+
+        def read_bytes(self):
+            return contents[0]
+
+    monkeypatch.setitem(sys.modules, "tlc", SimpleNamespace(Url=lambda value: Remote()))
+    source = "s3://project/model/best.pt"
+    first = Path(artifacts.materialize_checkpoint(source, tmp_path))
+    assert first.read_bytes() == b"first-model"
+    contents[0] = b"replacement-model"
+    assert Path(artifacts.materialize_checkpoint(source, tmp_path)).read_bytes() == b"replacement-model"
+    assert list(tmp_path.iterdir()) == [first]
+
+
+def test_checkpoint_access_failure_is_preserved_without_publishing_partial_file(monkeypatch, tmp_path):
+    class Denied:
+        def to_absolute(self):
+            return self
+
+        def __fspath__(self):
+            message = "Remote"
+            raise TypeError(message)
+
+        def read_bytes(self):
+            message = "Storage denied this read"
+            raise PermissionError(message)
+
+    monkeypatch.setitem(sys.modules, "tlc", SimpleNamespace(Url=lambda value: Denied()))
+    with pytest.raises(PermissionError, match="Storage denied"):
+        artifacts.materialize_checkpoint("s3://project/model/best.pt", tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_local_checkpoint_alias_resolves_without_copying(monkeypatch, tmp_path):
+    checkpoint = tmp_path / "best.pt"
+    checkpoint.write_bytes(b"model")
+    monkeypatch.setitem(
+        sys.modules, "tlc", SimpleNamespace(Url=lambda value: SimpleNamespace(to_absolute=lambda: checkpoint))
+    )
+    assert artifacts.materialize_checkpoint("<MODELS>/best.pt", tmp_path) == str(checkpoint)
+
+
 @pytest.fixture
 def training(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Any:
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")

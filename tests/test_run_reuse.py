@@ -146,6 +146,7 @@ def test_defaults_cached_per_installed_worker_not_per_project(tmp_path, monkeypa
 
 def test_mcp_form_tool_is_read_only_and_runs_on_the_selected_node():
     import tomllib
+
     from tlc_plugin_sdk.mcp_tools import load_mcp_section, parse_mcp_tools
 
     manifest = tomllib.loads((Path(__file__).parents[1] / "src/tlc_plugin_yolo/plugin.toml").read_text())
@@ -222,3 +223,42 @@ def test_training_mcp_keeps_every_native_form_control():
         "project_name": "P",
         "project_config": contract().normalize(values),
     }
+
+
+def test_saved_checkpoint_is_the_trained_model_not_initialization():
+    from tlc_plugin_yolo.run_reuse import checkpoint_from_record
+
+    run = {**record(), "status": 1}
+    run["parameters"].update({"mode": "train", "model_path": "model/best.pt"})
+    result = checkpoint_from_record(run)
+    assert result["checkpoint_url"] == run["url"] + "/model/best.pt"
+    assert result["checkpoint_url"] != run["parameters"]["model"]
+    run["parameters"]["model_path"] = "s3://bucket/shared/model.pt"
+    assert checkpoint_from_record(run)["checkpoint_url"] == "s3://bucket/shared/model.pt"
+    run["status"] = 0.5
+    with pytest.raises(ValueError, match="completed"):
+        checkpoint_from_record(run)
+    run["status"] = 1
+    del run["parameters"]["model_path"]
+    with pytest.raises(ValueError, match="no recorded"):
+        checkpoint_from_record(run)
+
+
+def test_saved_checkpoint_refreshes_configured_roots_before_read(monkeypatch):
+    import tlc
+    from tlc_plugin_sdk import data_tools
+
+    from tlc_plugin_yolo.run_reuse import saved_checkpoint
+
+    calls = []
+    run = {**record(), "status": 1}
+    run["parameters"].update({"mode": "train", "model_path": "model/best.pt"})
+    monkeypatch.setattr(tlc.configuration, "refresh_central_configuration", lambda **kw: calls.append(("refresh", kw)))
+
+    def read(url):
+        assert calls == [("refresh", {"timeout": 15})]
+        assert url == run["url"]
+        return run
+
+    monkeypatch.setattr(data_tools, "run_info", read)
+    assert saved_checkpoint(run["url"])["checkpoint_url"] == run["url"] + "/model/best.pt"

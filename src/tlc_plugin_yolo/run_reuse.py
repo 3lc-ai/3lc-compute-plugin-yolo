@@ -205,3 +205,30 @@ def training_arguments(values: dict[str, Any]) -> dict[str, Any]:
     arguments = contract().arguments(values)
     arguments.pop("mode", None)
     return arguments
+
+
+def checkpoint_from_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the completed training run's saved model, never its initialization weights."""
+    parameters = record.get("parameters") or {}
+    if record.get("status") != 1 or parameters.get("mode") != "train":
+        message = "Choose a completed training run"
+        raise ValueError(message)
+    path = parameters.get("model_path")
+    if not isinstance(path, str) or not path.strip():
+        message = "This run has no recorded saved checkpoint"
+        raise ValueError(message)
+    return {
+        "run_url": record["url"],
+        "checkpoint_url": _input_url(record["url"], path),
+        "task_type": _TASKS.get(parameters.get("task"), ""),
+        "imgsz": parameters.get("imgsz", 640),
+    }
+
+
+def saved_checkpoint(run_url: str) -> dict[str, Any]:
+    """Read the authorized native run record without loading or evaluating a model."""
+    import tlc
+    from tlc_plugin_sdk.data_tools import run_info
+
+    tlc.configuration.refresh_central_configuration(timeout=15)
+    return checkpoint_from_record(run_info(run_url))

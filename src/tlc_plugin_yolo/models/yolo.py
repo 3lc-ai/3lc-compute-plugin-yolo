@@ -15,7 +15,7 @@ from tlc_plugin_sdk.shared.url_utils import normalize_url
 from tlc_ultralytics import YOLO
 from tlc_ultralytics.settings import Settings
 
-from tlc_plugin_yolo.artifacts import cached_model, new_output_dir, record_output_dir
+from tlc_plugin_yolo.artifacts import cached_model, materialize_checkpoint, new_output_dir, record_output_dir
 from tlc_plugin_yolo.device import resolve_device
 from tlc_plugin_yolo.form_fields import yolo_fields
 from tlc_plugin_yolo.models import register_model
@@ -201,21 +201,12 @@ class YOLOModel(BaseTrainingModel):
         # through untouched); without it a tilde path reaches YOLO() literally.
         pretrained_url = normalize_url(params.get("pretrained_model_url", "").strip())
         source_model_name = model_name  # Remember the base model for metadata
-        if pretrained_url:
-            on_status(f"Loading pretrained model from: {pretrained_url}")
-            try:
-                resolved_path = str(tlc.Url(pretrained_url).to_absolute())
-                if Path(resolved_path).exists():
-                    model_name = resolved_path
-                    on_status(f"Resolved model path: {model_name}")
-                else:
-                    on_status(f"Pretrained path not found locally, using as-is: {pretrained_url}")
-                    model_name = pretrained_url
-            except Exception:
-                model_name = pretrained_url
         copy_model_to_run = _to_bool(params.get("copy_model_to_run", True))
 
         output_dir = new_output_dir()
+        if pretrained_url:
+            on_status("Loading saved model from project storage…")
+            model_name = materialize_checkpoint(pretrained_url, output_dir)
         output_overrides = {"project", "name", "save_dir"}.intersection(extra_kwargs)
         planned_output = Path(
             extra_kwargs.get(
@@ -376,6 +367,18 @@ class YOLOModel(BaseTrainingModel):
                     source_url=pretrained_url,
                     on_status=on_status,
                 )
+                if final_metrics and not skip_val:
+                    # Ultralytics' final evaluation loads trainer.best. Keep
+                    # those results tied to the saved artifact; the last epoch
+                    # in the training curve can describe a different model.
+                    tlc_run.set_parameters({
+                        "checkpoint_validation": {
+                            "model_path": model_path,
+                            "table_url": str(val_table.url),
+                            "metrics": final_metrics,
+                            "source": "ultralytics.final_eval.best",
+                        }
+                    })
 
             return {"run_url": run_url, "tlc_run": tlc_run, "final_metrics": final_metrics}
 
@@ -475,19 +478,11 @@ class YOLOModel(BaseTrainingModel):
             skip_val = True
 
         # Use pretrained model URL if provided
-        pretrained_url = params.get("pretrained_model_url", "").strip()
-        if pretrained_url:
-            on_status(f"Loading model from: {pretrained_url}")
-            try:
-                resolved_path = str(tlc.Url(pretrained_url).to_absolute())
-                if Path(resolved_path).exists():
-                    model_name = resolved_path
-                else:
-                    model_name = pretrained_url
-            except Exception:
-                model_name = pretrained_url
-
+        pretrained_url = normalize_url(params.get("pretrained_model_url", "").strip())
         output_dir = new_output_dir()
+        if pretrained_url:
+            on_status("Loading saved model from project storage…")
+            model_name = materialize_checkpoint(pretrained_url, output_dir)
         on_status(f"Ultralytics outputs on this worker: {output_dir}")
         if not pretrained_url:
             model_name = cached_model(model_name)

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import socket
 import tempfile
@@ -43,6 +44,28 @@ def cached_model(model: str) -> str:
                     shutil.copy2(downloaded, staged)
             staged.replace(target)
     return str(target)
+
+
+def materialize_checkpoint(source: str, output_dir: Path) -> str:
+    """Resolve a saved checkpoint through 3LC storage before handing it to YOLO.
+
+    Each job reads its requested object afresh. Reusing a URL-only cache could
+    silently evaluate old weights after the object was replaced.
+    """
+    import tlc
+
+    resolved = tlc.Url(source).to_absolute()
+    try:
+        return os.fspath(resolved)
+    except TypeError:
+        # Ultralytics accepts local files, not authenticated S3/other 3LC URLs.
+        # Use the same configured storage adapter as the project's tables.
+        target = output_dir / "source-model.pt"
+        with tempfile.TemporaryDirectory(prefix="checkpoint-", dir=output_dir) as staging:
+            staged = Path(staging) / target.name
+            staged.write_bytes(resolved.read_bytes())
+            staged.replace(target)
+        return str(target)
 
 
 def record_output_dir(run: Any, output_dir: Path, on_status: Callable[[str], None]) -> None:
